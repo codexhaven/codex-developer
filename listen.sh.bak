@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# CODES-DEVELOPER — Natural Language to Working Software
+# The only interface a non-coder needs.
+
+SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+
+main() {
+  local request="$1"
+  local project="${2:-$HOME/codex-builds}"
+  
+  echo "╔══════════════════════════════════════╗"
+  echo "║       CODES-DEVELOPER               ║"
+  echo "╚══════════════════════════════════════╝"
+  echo ""
+  echo "Request: $request"
+  echo "Project: $project"
+  echo ""
+  
+  # Step 1: Understand what they want
+  echo "► Understanding your request..."
+  local goal_prompt="A non-technical person said: \"$request\"
+Convert this into a clear software specification. Include:
+- What the program does (simple language)
+- What files to create
+- What each file should do
+- How the user will interact with it
+Use the simplest possible tech: single HTML file, or Python script. No frameworks unless needed."
+
+  local goal
+  goal=$(hermes chat -q "$goal_prompt" --yolo --quiet 2>/dev/null || echo "")
+  [ -z "$goal" ] && { echo "Failed to understand request."; exit 1; }
+    fi
+  echo "$goal" > "$SKILLDIR/goal.md"
+  echo "✓ Understood."
+  
+  # Step 2: Prepare project
+  echo "► Preparing..."
+  mkdir -p "$project/.codex"
+  echo '{"cycle":0,"successful_changes":0,"reverts":0,"files_built":[]}' > "$project/.codex/state.json"
+  rm -f "$project/.codex/build-queue.txt" "$project/.codex/build-done.txt"
+  touch "$project/.codex/build-queue.txt" "$project/.codex/build-done.txt"
+  echo "✓ Ready."
+  
+  # Step 3: Build it
+  echo "► Building your program..."
+  local max=20 cycle=0
+  while [ $cycle -lt $max ]; do
+    cycle=$((cycle+1))
+    
+    # Generate queue if empty
+    if [ ! -s "$project/.codex/build-queue.txt" ] || \
+       [ -z "$(comm -23 "$project/.codex/build-queue.txt" "$project/.codex/build-done.txt" 2>/dev/null)" ]; then
+      local queue_prompt="GOAL:\n$(cat $SKILLDIR/goal.md)\n\nList files to build. One per line. Dependency order."
+      local queue=$(hermes chat -q "$queue_prompt" --yolo --quiet 2>/dev/null || echo "")
+      echo "$queue" | grep -E '^[a-zA-Z0-9_/.+-]+$' > "$project/.codex/build-queue.txt" 2>/dev/null
+    fi
+    
+    # Run one cycle
+    CODEX_REPO="$project" bash "$SKILLDIR/runcycle.sh" 2>&1 | grep -E "BUILT|DONE|CYCLE|FAIL" | head -1
+    
+    local remaining=$(comm -23 "$project/.codex/build-queue.txt" "$project/.codex/build-done.txt" 2>/dev/null | wc -l)
+    [ "$remaining" -eq 0 ] && break
+    sleep 1
+  done
+  
+  # Step 4: Tell them how to use it
+  echo ""
+  echo "╔══════════════════════════════════════╗"
+  echo "║       YOUR PROGRAM IS READY          ║"
+  echo "╚══════════════════════════════════════╝"
+  echo ""
+  echo "Location: $project"
+  echo ""
+  
+  if [ -f "$project/index.html" ]; then
+    echo "► Open this file in your browser:"
+    echo "   $project/index.html"
+  elif [ -f "$project/main.py" ]; then
+    echo "► Run this command:"
+    echo "   python3 $project/main.py"
+  elif [ -f "$project/backend/server.py" ]; then
+    echo "► Start with:"
+    echo "   cd $project/backend && pip install -r requirements.txt && python3 server.py"
+    echo "   Then open http://localhost:5000"
+  fi
+  echo ""
+}
+
+main "$@"

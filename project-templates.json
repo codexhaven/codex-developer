@@ -1,0 +1,57 @@
+{
+  "flask-app": {
+    "keywords": ["flask", "api", "backend", "server", "endpoint", "post", "get", "python server"],
+    "template": [
+      "backend/requirements.txt",
+      "backend/models.py",
+      "backend/database.py",
+      "backend/server.py",
+      "frontend/style.css",
+      "frontend/index.html",
+      "frontend/app.js",
+      "tests/test_api.py",
+      "README.md"
+    ]
+  },
+  "static-site": {
+    "keywords": ["html", "css", "javascript", "web page", "landing", "portfolio", "static"],
+    "template": [
+      "index.html",
+      "style.css",
+      "app.js",
+      "README.md"
+    ]
+  },
+  "single-file-app": {
+    "keywords": ["single file", "one file", "standalone", "index.html only"],
+    "template": [
+      "index.html"
+    ]
+  },
+  "cli-tool": {
+    "keywords": ["cli", "command line", "terminal", "bash", "shell script", "python script"],
+    "template": [
+      "src/main.py",
+      "src/utils.py",
+      "requirements.txt",
+      "README.md"
+    ]
+  },
+  "multi-page-site": {
+    "keywords": ["blog", "multi", "pages", "admin", "dashboard", "multiple pages"],
+    "template": [
+      "backend/requirements.txt",
+      "backend/models.py",
+      "backend/database.py",
+      "backend/server.py",
+      "frontend/style.css",
+      "frontend/index.html",
+      "frontend/post.html",
+      "frontend/admin.html",
+      "frontend/app.js",
+      "tests/test_models.py",
+      "tests/test_api.py",
+      "README.md"
+    ]
+  }
+}

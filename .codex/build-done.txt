@@ -1,0 +1,1 @@
+SED: runcycle.sh - fix mark_done to save full queue entry instead of just filename to maintain consistency with next_file queue processing.
