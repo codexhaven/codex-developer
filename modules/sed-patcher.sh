@@ -1,76 +1,70 @@
 #!/usr/bin/env bash
+#!/usr/bin/env bash
 # SED PATCHER v2 — accepts any sed-like command from Hermes
-REPODIR="${CODEX_REPO:-$HOME/codex-builds}"
+set -euo pipefail
+REPODIR="$(realpath "${CODEX_REPO:-$HOME/codex-builds}")"
 
 apply_sed_patch() {
   local filepath="$1" desc="$2" goal="$3"
-  local fp="$REPODIR/$filepath"
+  local fp="$(realpath "$REPODIR/$filepath")"
+  [[ "$fp" != "$REPODIR"* ]] && { echo "Traversal blocked."; return 1; }
   [ ! -f "$fp" ] && { echo "File not found: $fp"; return 1; }
 
-  # Find relevant sections
+  # Find relevant sections safely
   local search_term=$(echo "$desc" | grep -oE 'Replace [a-zA-Z_.]+' | sed 's/Replace //' | head -1)
   [ -z "$search_term" ] && search_term="error"
-  local sections=$(grep -n -B3 -A3 "${search_term//./\\.}" "$fp" 2>/dev/null | head -80)
-  [ -z "$sections" ] && sections=$(head -50 "$fp" | cat -n)
+  local sections=$(grep -n -B3 -A3 "${search_term//./\\.}" "$fp" 2>/dev/null | head -n 80 || head -n 50 "$fp" | cat -n)
 
-  # Ask Hermes for sed commands
+  # Secure Temp File for Patch
+  local patch_file="$(mktemp)"
+  
+  # Hermes Prompt with strict instruction for safe output
   local prompt="TARGET: $filepath
 CHANGE: $desc
-
-FILE SECTIONS:
+CONTEXT: 
 $sections
-
-Output ONLY sed commands. One per line. Nothing else.
-Format: NUMBER a\\text  or  NUMBERs/old/new/  or  /pattern/s/old/new/g
-Example:
-27 a\\import logging
-47s/st\\.error(/logging.getLogger(__name__).error(/
-/st\\.error/s/st\\.error(/logging.getLogger(__name__).error(/g"
+Output strictly ONLY valid sed commands, one per line. Do NOT use shell features.
+Valid patterns: s/pattern/replacement/g , /pattern/s/old/new/g , NUMBER c\text
+NO shell backticks or execution operators."
 
   local sed_output
   sed_output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
-  [ -z "$sed_output" ] && { echo "FAIL: No output."; return 1; }
+  
+  # Validate output to only contain allowed sed structure
+  # Allows: s/a/b/g, /a/s/b/c/g, #c\text
+  echo "$sed_output" | grep -E '^(s/|/[^/]+/[^/]+/|([0-9]+[a-z]\\))' > "$patch_file"
+  [ ! -s "$patch_file" ] && { echo "No valid commands found."; rm -f "$patch_file"; return 1; }
 
-  echo "Hermes output:"
-  echo "$sed_output"
+  # Secure Backup
+  local bak="$(mktemp)"
+  cp "$fp" "$bak"
 
-  # Extract sed commands — anything starting with a number or / or s
-  local patch_file="$REPODIR/.codex/patch-$(basename "$filepath").sed"
-  # Accept any line starting with a number followed by sed command, or a /pattern/, or s/
-echo "$sed_output" | grep -E '^[0-9]|^/|^s/' > "$patch_file"
-  [ ! -s "$patch_file" ] && { echo "No valid commands found."; return 1; }
-
-  echo "Commands to apply:"
-  cat "$patch_file"
-
-  # Apply
-  cp "$fp" "$fp.bak"
   local ok=0 fail=0
   while IFS= read -r cmd; do
-    [ -z "$cmd" ] && continue
+    # Perform patch
     if sed -i "$cmd" "$fp" 2>/dev/null; then
-      echo "OK: $cmd"; ok=$((ok+1))
+      ok=$((ok+1))
     else
-      echo "FAIL: $cmd"; fail=$((fail+1))
+      fail=$((fail+1))
     fi
   done < "$patch_file"
 
-  if [ $ok -eq 0 ]; then
-    echo "No commands applied. Restoring."
-    cp "$fp.bak" "$fp"; rm -f "$fp.bak"; return 1
-  fi
-
-  # Verify
+  # Verification
+  local clean=0
   if [[ "$filepath" == *.py ]]; then
-    if python3 -m py_compile "$fp" 2>/dev/null; then
-      echo "SYNTAX: PASS"
-    else
-      echo "SYNTAX: FAIL. Restoring."
-      cp "$fp.bak" "$fp"; rm -f "$fp.bak"; return 1
-    fi
+    python3 -m py_compile "$fp" 2>/dev/null && clean=1
+  else
+    clean=1
   fi
 
-  rm -f "$fp.bak"
+  if [ $ok -eq 0 ] || [ $clean -eq 0 ]; then
+    echo "Patch failed/syntax invalid. Restoring."
+    cp "$bak" "$fp"
+    rm -f "$bak" "$patch_file"
+    return 1
+  fi
+
+  rm -f "$bak" "$patch_file"
   echo "PATCHED: $filepath ($ok changes)"
 }
 

@@ -25,12 +25,9 @@ log() { echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')]" "$@"; }
 bash "${SKILLDIR}/kernel.sh" check 2>&1 | while read -r l; do [ -n "$l" ] && log "KERNEL: $l"; done
   ensure_files() {
   mkdir -p "$REPODIR" "$(dirname "$STATEFILE")"
-  [ -f "$STATEFILE" ] || echo '{"cycle":0,"successful_changes":0,"reverts":0,"files_built":[]}' > "$STATEFILE"
-  [ -f "$QUEUEFILE" ] || touch "$QUEUEFILE"
-  [ -f "$DONEFILE" ] || touch "$DONEFILE"
-  [ -f "$GLOBAL_KNOWLEDGE" ] || touch "$GLOBAL_KNOWLEDGE"
-  [ -f "$LESSONSFILE" ] || echo "# Lessons" > "$LESSONSFILE"
-  touch "$LESSONSJSONL" 2>/dev/null || true
+  [[ -f "$STATEFILE" ]] || echo '{"cycle":0,"successful_changes":0,"reverts":0,"files_built":[]}' > "$STATEFILE"
+  touch "$QUEUEFILE" "$DONEFILE" "$GLOBAL_KNOWLEDGE" "$LESSONSJSONL"
+  [[ -f "$LESSONSFILE" ]] || echo "# Lessons" > "$LESSONSFILE"
 }
 
 read_goal() { [ -f "$GOALFILE" ] && cat "$GOALFILE" || echo "No goal."; }
@@ -39,7 +36,7 @@ read_goal() { [ -f "$GOALFILE" ] && cat "$GOALFILE" || echo "No goal."; }
 parse_entry() {
   local entry="$1"
   # Strip absolute paths
-  entry=$(echo "$entry" | sed "s|$REPODIR/||g")
+  entry="${entry#$REPODIR/}"
   [ -z "$entry" ] && { echo "MODE=SKIP FILE= DESC="; return; }
   [[ "$entry" =~ ^(NEW|PATCH|SED):[[:space:]]*$ ]] && { echo "MODE=SKIP FILE= DESC="; return; }
   
@@ -167,11 +164,21 @@ build_file() {
     attempt=$((attempt + 1))
     [ $attempt -gt 1 ] && log "RETRY $attempt/$MAX_RETRIES for $filepath"
     
+    # Read previous failures for context
+    local failure_reason=""
+    if [ -f "${REPODIR}/.codex/last_error.log" ]; then
+      failure_reason=$(cat "${REPODIR}/.codex/last_error.log")
+      rm -f "${REPODIR}/.codex/last_error.log"
+    fi
+
     local prompt
     if [ "$mode" = "PATCH" ]; then
       prompt="## MODE: PATCH EXISTING FILE
 ## GLOBAL KNOWLEDGE
 $knowledge
+
+## PREVIOUS ATTEMPT FAILURE
+$failure_reason
 
 ## PROJECT GOAL
 $goal
@@ -192,6 +199,7 @@ You are PATCHING an existing file.
 - Do NOT rewrite unrelated code.
 - Do NOT remove existing functionality.
 - Maximum $MAXLINES lines total.
+- If previous attempts failed, change your approach (e.g. use full-file rewrite instead of sed).
 
 Output format:
 FILE: $filepath
@@ -267,6 +275,21 @@ verify_file() {
   return 0
 }
 
+mark_done() {
+  local filepath="$1" lines="$2" mode="$3" entry="$4"
+  echo "$entry" >> "$DONEFILE"
+  python3 -c "
+import json, datetime, os
+s=json.load(open('$STATEFILE'))
+s['cycle']=s.get('cycle',0)+1
+s['last_action']='[$mode] $filepath'
+s['successful_changes']=s.get('successful_changes',0)+1
+s['total_lines_changed']=s.get('total_lines_changed',0)+$lines
+fb=s.get('files_built',[]); fb.append('$entry'); s['files_built']=fb
+s['last_success_time']=datetime.datetime.now(datetime.UTC).isoformat()
+tmp='$STATEFILE.tmp'; json.dump(s,open(tmp,'w'),indent=2); os.replace(tmp,'$STATEFILE')
+" 2>/dev/null || true
+}
 
 revert_file() {
   local filepath="$1"
@@ -317,9 +340,9 @@ main() {
   fi
 
   local parsed=$(parse_entry "$entry")
-  local mode=$(echo "$parsed" | grep -oP "MODE=\K[^ ]+")
-  local current=$(echo "$parsed" | grep -oP "FILE=\K[^ ]+")
-  local desc=$(echo "$parsed" | grep -oP "DESC=\K.*" | sed 's/DESC=//')
+  local mode=$(echo "$parsed" | sed "s/MODE=//;s/ .*//")
+  local current=$(echo "$parsed" | sed "s/.*FILE=//;s/ .*//")
+  local desc=$(echo "$parsed" | awk -F'DESC=' '/DESC=/ {print $2}')
 
   local cycle=$(python3 -c "import json; print(json.load(open('$STATEFILE')).get('cycle',0)+1)" 2>/dev/null || echo "1")
   log "CYCLE $cycle | $mode: $current"
@@ -328,6 +351,7 @@ main() {
 
   local output
   if [ "$mode" = "SED" ]; then
+    log "DEBUG: SED branch entered, current=$current"
     log "SED PATCH: Applying targeted changes to $current..."
     CODEX_REPO="$REPODIR" bash "${SKILLDIR}/modules/sed-patcher.sh" "$current" "$desc" "$goal" && output="FILE: $current" || output=""
   elif [ "$mode" = "PATCH" ]; then
@@ -336,24 +360,29 @@ main() {
   else
     output=$(build_file "$current" "$goal" "$built" "$(get_global_knowledge "$goal")" "$mode" "$desc")
   fi
-  [ $? -ne 0 ] || [ -z "$output" ] && { revert_file "$current"; exit 1; }
+  if [ $? -ne 0 ] || [ -z "$output" ]; then log "FAIL: SED or Build failed"; revert_file "$current"; exit 1; fi
 
   local applied
   if [ "$mode" = "SED" ]; then
+    log "DEBUG: SED branch entered, current=$current"
     # SED mode already applied changes and verified syntax
     applied="$current"
+    log "DEBUG: applied=$applied, about to verify"
   else
     applied=$(apply_file "$output")
     [ -z "$applied" ] && { log "FAIL: Could not parse output"; revert_file "$current"; exit 1; }
   fi
 
   if ! verify_file "$applied"; then
+    log "VERIFY FAIL: $applied"
+    echo "Verification failed for $applied" > "${REPODIR}/.codex/last_error.log"
     revert_file "$applied"; exit 1
   fi
   log "VERIFY: PASS"
 
   local lines=$(wc -l < "$REPODIR/$applied" 2>/dev/null || echo 0)
-  mark_done "$entry" "$lines" "$mode"
+  mark_done "$applied" "$lines" "$mode" "$entry"
+    log "DEBUG: mark_done called"
   commit_all "$applied"
 
   local next=$(next_file)

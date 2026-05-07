@@ -2,11 +2,15 @@
 """Analyze lessons.jsonl for patterns and generate constraints."""
 import json
 import os
+import sys
+import fcntl
 from collections import Counter
 
-HOME = os.path.expanduser('~')
-LESSONS_FILE = os.path.join(HOME, 'codex-builds', '.codex', 'lessons.jsonl')
-GLOBAL_FILE = os.path.join(HOME, '.hermes', 'skills', 'codex-developer', 'global-knowledge.jsonl')
+# Use environment variables for path configuration
+REPODIR = os.getenv('CODEX_REPO', os.path.expanduser('~/codex-builds'))
+SKILLDIR = os.getenv('SKILLDIR', os.path.expanduser('~/.hermes/skills/codex-developer'))
+LESSONS_FILE = os.path.join(REPODIR, '.codex', 'lessons.jsonl')
+GLOBAL_FILE = os.path.join(SKILLDIR, 'global-knowledge.jsonl')
 
 def analyze():
     if not os.path.exists(LESSONS_FILE):
@@ -14,63 +18,56 @@ def analyze():
         return
     
     lessons = []
-    with open(LESSONS_FILE) as f:
-        for line in f:
-            try:
-                lessons.append(json.loads(line))
-            except:
-                pass
-    
-    if len(lessons) < 3:
-        print(f"Only {len(lessons)} lessons — need at least 3 for pattern detection.")
+    try:
+        with open(LESSONS_FILE, 'r') as f:
+            for line in f:
+                try:
+                    lessons.append(json.loads(line))
+                except json.JSONDecodeError as e:
+                    print(f"Error parsing lesson line: {e}", file=sys.stderr)
+    except Exception as e:
+        print(f"Error reading lessons file: {e}", file=sys.stderr)
         return
     
-    # Find failures
+    if len(lessons) < 3:
+        print(f"Only {len(lessons)} lessons — need at least 3.")
+        return
+    
     failures = [l for l in lessons if l.get('result') != 'SUCCESS']
     successes = [l for l in lessons if l.get('result') == 'SUCCESS']
     
-    print(f"Analyzed {len(lessons)} lessons: {len(successes)} successes, {len(failures)} failures")
+    print(f"Analyzed {len(lessons)} lessons: {len(successes)} success, {len(failures)} failures")
     
-    # Detect repeated failure patterns
     if len(failures) >= 2:
         fail_tasks = [f.get('task', '') for f in failures]
         task_counts = Counter(fail_tasks)
         
-        for task, count in task_counts.items():
-            if count >= 2:
-                constraint = {
-                    "type": "rule",
-                    "rule": f"AUTO-CONSTRAINT: Task '{task[:80]}' failed {count} times. Next attempt must use a different approach. Review why it failed before retrying.",
-                    "source": "lesson-analyzer",
-                    "priority": "high"
-                }
-                
-                # Check if this constraint already exists
+        # Open GLOBAL_FILE with locking
+        if not os.path.exists(GLOBAL_FILE):
+            os.mknod(GLOBAL_FILE)
+            os.chmod(GLOBAL_FILE, 0o600)
+            
+        with open(GLOBAL_FILE, 'r+') as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                existing = [json.loads(line) for line in f if line.strip()]
+            except json.JSONDecodeError:
                 existing = []
-                if os.path.exists(GLOBAL_FILE):
-                    with open(GLOBAL_FILE) as f:
-                        for line in f:
-                            try:
-                                existing.append(json.loads(line))
-                            except:
-                                pass
-                
-                already_exists = any(
-                    e.get('type') == 'rule' and task[:50] in e.get('rule', '')
-                    for e in existing
-                )
-                
-                if not already_exists:
-                    with open(GLOBAL_FILE, 'a') as f:
+            
+            for task, count in task_counts.items():
+                if count >= 2:
+                    already_exists = any(e.get('type') == 'rule' and task[:50] in e.get('rule', '') for e in existing)
+                    
+                    if not already_exists:
+                        constraint = {
+                            "type": "rule",
+                            "rule": f"AUTO-CONSTRAINT: Task '{task[:80]}' failed {count} times. Review before retrying.",
+                            "source": "lesson-analyzer",
+                            "priority": "high"
+                        }
                         f.write(json.dumps(constraint) + '\n')
-                    print(f"ADDED CONSTRAINT: {constraint['rule'][:120]}...")
-    
-    # Detect successful patterns (keep doing what works)
-    if len(successes) >= 3:
-        recent_success = successes[-3:]
-        patterns = [s.get('task', '') for s in recent_success]
-        print(f"Recent successes: {len(patterns)}")
-        print("No new constraints needed — pipeline is healthy.")
+                        print(f"ADDED CONSTRAINT: {task[:60]}...")
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 if __name__ == '__main__':
     analyze()

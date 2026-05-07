@@ -19,22 +19,38 @@ understand() {
   # Detect local path in request (e.g., "Review ~/my-project for bugs")
   local local_path=$(echo "$request" | grep -oE "(~/\S+|/data/\S+)" | head -1)
   if [ -n "$local_path" ]; then
-    REPODIR=$(eval echo "$local_path" 2>/dev/null || echo "$local_path")
+    # Security: Resolve path without eval
+case "$local_path" in
+  ~/*) REPODIR="${local_path/#\~/$HOME}" ;;
+  /*)  REPODIR="$local_path" ;;
+  *)   REPODIR="$HOME/$local_path" ;;
+esac
+REPODIR="$(realpath "$REPODIR")"
+[[ "$REPODIR" != "$HOME/"* ]] && { echo "Unsafe path: $REPODIR" >&2; exit 1; }
     [ -d "$REPODIR" ] && { echo "Local project: $REPODIR"; } || REPODIR=""
   fi
   
-  # If no local path found, check for GitHub URL
+  # Check for GitHub URL FIRST — overrides everything
   local repo_url=$(echo "$request" | grep -oE "https?://github.com/[^ ]+" | head -1)
-  if [ -z "$REPODIR" ] && [ -n "$repo_url" ]; then
+  if [ -n "$repo_url" ]; then
     local repo_name=$(basename "$repo_url" .git)
     REPODIR="$HOME/$repo_name"
     if [ ! -d "$REPODIR" ]; then
       echo "Cloning $repo_url ..."
-      git clone "$repo_url" "$REPODIR" 2>/dev/null && echo "Cloned." || { echo "Clone failed."; exit 1; }
+      # Try token-based auth first, fall back to regular clone
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+      git clone "https://${GITHUB_TOKEN}@${repo_url#https://}" "$REPODIR" 2>/dev/null && echo "Cloned." || { echo "Clone failed. Check token or repo."; exit 1; }
+    elif [ -n "${COPILOT_GITHUB_TOKEN:-}" ]; then
+      git clone "https://${COPILOT_GITHUB_TOKEN}@${repo_url#https://}" "$REPODIR" 2>/dev/null && echo "Cloned." || { echo "Clone failed."; exit 1; }
+    else
+      git clone "$repo_url" "$REPODIR" 2>/dev/null && echo "Cloned." || { echo "Clone failed. Set GITHUB_TOKEN for private repos."; exit 1; }
     fi
-  else
-    [ -z "$REPODIR" ] && REPODIR="${project_dir:-$HOME/codex-builds}"
+    else
+      echo "Using existing repo: $REPODIR"
+    fi
   fi
+  # Fallback if no URL detected
+  [ -z "$REPODIR" ] && REPODIR="${project_dir:-$HOME/codex-builds}"
   # Infer Persona
   PERSONA="LEARNER" 
   if echo "$request" | grep -qiE "build|create|I want|need"; then
@@ -47,8 +63,8 @@ understand() {
   
   # Check for zombie state from previous failed runs
   if [ -f "$REPODIR/.codex/state.json" ]; then
-    local last_action=$(python3 -c "import json; print(json.load(open('$REPODIR/.codex/state.json')).get('last_action',''))" 2>/dev/null)
-    if [[ "$last_action" == *"FAIL"* ]] || [ -f "$REPODIR/.codex/build-queue.txt" ] && [ ! -s "$REPODIR/.codex/build-queue.txt" ]; then
+    local last_action=$(grep -o '"last_action": "[^"]*"' "$REPODIR/.codex/state.json" 2>/dev/null | cut -d'"' -f4)
+    if [[ "$last_action" == *"FAIL"* ]] || { [ -f "$REPODIR/.codex/build-queue.txt" ] && [ ! -s "$REPODIR/.codex/build-queue.txt" ] && [ -s "$REPODIR/.codex/build-done.txt" ]; }; then
       echo "Auto-healing zombie state..."
       echo '{"cycle":0,"successful_changes":0,"reverts":0,"files_built":[]}' > "$REPODIR/.codex/state.json"
       > "$REPODIR/.codex/build-queue.txt"
@@ -58,7 +74,7 @@ understand() {
   
   local code_files=$(find "$REPODIR" -maxdepth 4 -type f \( -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.html" -o -name "*.css" -o -name "*.sh" \) -not -path "*/.git/*" -not -path "*/.codex/*" -not -path "*/__pycache__/*" -not -path "*/node_modules/*" 2>/dev/null | wc -l)
 
-  if echo "$request" | grep -qi "review\|audit\|scan\|analyze\|find bug\|check code\|code review"; then
+  if echo "$request" | grep -qiE "(reviews/|security review|bug review|code review|audit|scan for|analyze this|find bugs)"; then
     MODE="REVIEW"
   elif [ "$code_files" -lt 1 ]; then
     MODE="NEW"
@@ -81,7 +97,7 @@ mode_review() {
   > "$REPODIR/.codex/build-queue.txt"
   > "$REPODIR/.codex/build-done.txt"
   
-  local files=$(find "$REPODIR" -maxdepth 10 -type f \( -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.sh" \) -not -path "*/.git/*" -not -path "*/.codex/*" -not -path "*/reviews/*" -not -path "*/__pycache__/*" -not -path "*/node_modules/*" 2>/dev/null | grep "^$REPODIR")
+  local files=$(find "$REPODIR" -maxdepth 10 -type f \( -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.sh" -o -name "*.json" -o -name "*.md" -o -name "*.txt" -o -name "*.yml" -o -name "*.yaml" -o -name "*.toml" -o -name "*.cfg" -o -name "*.ini" \) -not -path "*/.git/*" -not -path "*/.codex/*" -not -path "*/reviews/*" -not -path "*/__pycache__/*" -not -path "*/node_modules/*" 2>/dev/null | grep "^$REPODIR")
   local total=$(echo "$files" | wc -l) done=0
   
   echo "Files to review: $total"
@@ -109,7 +125,12 @@ $content
 Output markdown: Finding | Risk: Critical/High/Medium/Low | Fix"
     
     local review=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
-    [ -n "$review" ] && { echo "$review" > "$REPODIR/$review_file"; echo "  Saved."; }
+    [ -n "$review" ] && {
+    # Strip diff syntax and code blocks from review output
+    local clean_review=$(echo "$review" | grep -vE '^(@@|---|\+\+\+|diff --git|index |new file mode|deleted file mode|^[-+]{3})' | grep -vE '^```')
+    echo "$clean_review" > "$REPODIR/$review_file"
+    echo "  Saved."
+  }
   done <<< "$files"
   
   # Summary
@@ -125,7 +146,7 @@ $all_reviews" --yolo --quiet 2>/dev/null || echo "")
   local crit=$(grep -rli "| Critical" "$REPODIR/reviews/" 2>/dev/null | wc -l)
   local high=$(grep -rli "| High" "$REPODIR/reviews/" 2>/dev/null | wc -l)
   local med=$(grep -rli "| Medium" "$REPODIR/reviews/" 2>/dev/null | wc -l)
-  
+  # Show findings and action menu
   echo ""
   echo "=============================================="
   echo "  REVIEW COMPLETE"
@@ -133,102 +154,84 @@ $all_reviews" --yolo --quiet 2>/dev/null || echo "")
   echo "  Critical: $crit | High: $high | Medium: $med"
   echo "=============================================="
   echo ""
-  echo "TOP FINDINGS:"
-  for sev in "Critical" "High"; do
-    local cnt=$(grep -rli "Risk: $sev" "$REPODIR/reviews/" 2>/dev/null | wc -l)
-    [ "$cnt" -eq 0 ] && continue
-    echo "  [$sev]"
-    grep -rl "Risk: $sev" "$REPODIR/reviews/" 2>/dev/null | head -8 | while read -r rv; do
-      local nm=$(basename "$rv" .md | sed 's/^[0-9]*-//')
-      local fnd=$(tail -n +3 "$rv" | head -n 1 | cut -d'|' -f1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-      echo "    $nm — $fnd"
-    done
-    echo ""
-  done
-  
-  echo "What should I fix?"
-  echo "  [1] Fix ALL critical"
-  echo "  [2] Fix critical + high"
-  echo "  [3] Fix everything"
-  echo "  [4] Pick specific files"
-  echo "  [5] Just the report"
-  echo ""
-  echo -n "Choice [1-5]: "
-  read -r choice
-  
-  case "$choice" in
-    1) fix_from_reviews "Critical" ;;
-    2) fix_from_reviews "Critical\|High" ;;
-    3) fix_from_reviews "Critical\|High\|Medium" ;;
-    4) echo "Reviews in: $REPODIR/reviews/"; echo "Run: listen.sh 'Fix X in file' $REPODIR" ;;
-    5) 
-       echo "Report details:"
-       echo "  Summary: $REPODIR/reviews/SUMMARY.md"
-       echo "  Review files:"
-       ls -1 "$REPODIR/reviews/" | grep ".md" | sed 's/^/    /'
-       echo ""
-       echo "To read a report, use 'cat' or your editor:"
-       echo "  cat $REPODIR/reviews/FILENAME.md"
-       ;;
-    *) echo "Invalid choice. Please select 1-5." ;;
-  esac
+  echo "Review saved to $REPODIR/reviews/"
+  echo "To fix issues, use: listen.sh 'Fix [issue]' $REPODIR"
 }
 
-# =============================================================================
-# FIX FROM REVIEWS
-# =============================================================================
-fix_from_reviews() {
-  local severity="$1"
-  echo ""
-  echo "Building fix queue for $severity..."
-  
-  > "$REPODIR/.codex/build-queue.txt"
-  > "$REPODIR/.codex/build-done.txt"
-  
-  local fix_prompt="Extract all findings with Risk: $severity. Create PATCH queue entries for Python files, SED for others.
-Format: PATCH: path/to/file.ext - fix description
-Format: SED: path/to/file.ext - fix description
-Use original file paths from the reviews.
 
-$(find "$REPODIR/reviews" -name "*.md" -exec cat {} \; 2>/dev/null)"
-  
-  local queue=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
-  [ -n "$queue" ] && echo "$queue" | grep -E '^(PATCH|SED):' > "$REPODIR/.codex/build-queue.txt" || true
-  
-  local entries=$(wc -l < "$REPODIR/.codex/build-queue.txt" 2>/dev/null || echo 0)
-  echo "Fix queue: $entries changes"
-  [ "$entries" -eq 0 ] && { echo "Nothing to fix."; return; }
-  
-  echo -n "Proceed with $entries fixes? (y/N): "
-  read -r confirm
-  [ "$confirm" != "y" ] && [ "$confirm" != "Y" ] && { echo "Cancelled."; return; }
-  
-  run_build_loop
-  
-  # Re-review
-  echo ""
-  echo "Re-reviewing..."
-  while IFS= read -r line; do
-    local type=$(echo "$line" | cut -d':' -f1)
-    local f=$(echo "$line" | sed -E 's/^(PATCH|SED): ([^ ]+) - .*/\2/')
-    [ -z "$f" ] || [ ! -f "$REPODIR/$f" ] && continue
-    local idx=$(printf "%03d" $(( $(ls "$REPODIR/reviews/" 2>/dev/null | wc -l) + 1 )))
-    local nm="${idx}-$(echo "${f%.*}" | tr '/' '-')"
-    local ct=$(cat "$REPODIR/$f" 2>/dev/null)
-    local rr=$(hermes chat -q "Re-review after fix. Resolved? Remaining issues? File: $f
-    
-$ct" --yolo --quiet 2>/dev/null || echo "")
-    [ -n "$rr" ] && echo "$rr" > "$REPODIR/reviews/${nm}-POST-FIX.md"
-    echo "  Re-reviewed: $f"
-  done < "$REPODIR/.codex/build-queue.txt"
-  echo "Post-fix reviews saved."
-}
-
-# =============================================================================
-# EXISTING MODE
 # =============================================================================
 mode_existing() {
   echo "Analyzing existing project..."
+  
+  # Check if we have existing reviews to guide fixes
+  if [ -d "$REPODIR/reviews" ] && [ -n "$(ls -A "$REPODIR/reviews/" 2>/dev/null)" ]; then
+    echo "Found existing reviews. Using them to guide fixes..."
+    # Build queue from review findings
+    > "$REPODIR/.codex/build-queue.txt"
+    local review_count=0
+    for rv in "$REPODIR/reviews/"*.md; do
+      [ "$rv" = "$REPODIR/reviews/SUMMARY.md" ] && continue
+      [ ! -f "$rv" ] && continue
+      
+      # Get original filename
+      local base=$(basename "$rv" .md | sed 's/^[0-9]*-//')
+      local orig=""
+      for ext in py js ts sh json md; do
+        [ -f "$REPODIR/$base.$ext" ] && { orig="$base.$ext"; break; }
+      done
+      [ -z "$orig" ] && continue
+      
+      # Extract findings from review
+      local in_finding_block=false
+      local current_finding=""
+      local current_risk=""
+      local current_fix=""
+      
+      while IFS= read -r line; do
+        if [[ "$line" =~ ^Finding:[[:space:]]*(.*)$ ]]; then
+          # Save previous finding if complete
+          if [ -n "$current_finding" ] && [ -n "$current_risk" ] && [ -n "$current_fix" ]; then
+            echo "PATCH: $orig - $current_finding" >> "$REPODIR/.codex/build-queue.txt"
+            review_count=$((review_count + 1))
+          fi
+          # Start new finding
+          current_finding="${BASH_REMATCH[1]}"
+          current_risk=""
+          current_fix=""
+          in_finding_block=true
+        elif [[ "$line" =~ ^Risk:[[:space:]]*(.*)$ ]] && [ "$in_finding_block" = true ]; then
+          current_risk="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^Fix:[[:space:]]*(.*)$ ]] && [ "$in_finding_block" = true ]; then
+          current_fix="${BASH_REMATCH[1]}"
+        elif [[ -z "$line" ]] && [ "$in_finding_block" = true ]; then
+          # End of finding block (empty line)
+          if [ -n "$current_finding" ] && [ -n "$current_risk" ] && [ -n "$current_fix" ]; then
+            echo "PATCH: $orig - $current_finding" >> "$REPODIR/.codex/build-queue.txt"
+            review_count=$((review_count + 1))
+          fi
+          current_finding=""
+          current_risk=""
+          current_fix=""
+          in_finding_block=false
+        fi
+      done < "$rv"
+      
+      # Handle last finding if file doesn't end with empty line
+      if [ -n "$current_finding" ] && [ -n "$current_risk" ] && [ -n "$current_fix" ]; then
+        echo "PATCH: $orig - $current_finding" >> "$REPODIR/.codex/build-queue.txt"
+        review_count=$((review_count + 1))
+      fi
+    done
+    
+    if [ "$review_count" -gt 0 ]; then
+      echo "Generated $review_count fix entries from reviews."
+      run_build_loop
+      return
+    else
+      echo "No actionable findings in reviews, falling back to standard analysis..."
+    fi
+  fi
+  
   mkdir -p "$REPODIR/.codex"
   > "$REPODIR/.codex/build-queue.txt"
   > "$REPODIR/.codex/build-done.txt"
@@ -241,17 +244,16 @@ mode_existing() {
     *) persona_instruction="You are a helpful assistant. Explain your steps clearly for a learner." ;;
   esac
   
-  local analysis_prompt="Project files: $file_list. 
-Your task: $REQUEST. 
-Identify the target file from the list above. 
+  local analysis_prompt="Project files: $file_list.
+Your task: $REQUEST.
+Identify the target file from the list above.
 CRITICAL: Output ONLY ONE single queue entry.
 CRITICAL: Use the exact path found in the project list.
-Format: SED: path/to/file.py - change details.
+Format: PATCH: path/to/file.py - change details.
 Do not include any other text."
   local plan=$(hermes chat -q "$analysis_prompt" --yolo --quiet 2>/dev/null || echo "")
   # Strip absolute paths but preserve the mode prefix (NEW:, PATCH:, SED:)
-  plan=$(echo "$plan" | sed -E "s|($REPODIR/)| |g" | sed -E 's/([A-Z]+:)[[:space:]]+ /\1 /')
-  [ -n "$plan" ] && echo "$plan" | grep -E '^(NEW:|PATCH:|SED:)' > "$REPODIR/.codex/build-queue.txt" || true
+  [ -n "$plan" ] && echo "$plan" | grep -E '^(NEW:|PATCH:|PATCH:)' > "$REPODIR/.codex/build-queue.txt" || true
   local entries=$(wc -l < "$REPODIR/.codex/build-queue.txt" 2>/dev/null || echo 0)
   echo "Plan: $entries changes"
   [ "$entries" -gt 0 ] && cat "$REPODIR/.codex/build-queue.txt"

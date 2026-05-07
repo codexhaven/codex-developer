@@ -2,15 +2,36 @@
 SKILLDIR="${HOME}/.hermes/skills/codex-developer"
 check() {
   local filepath="$1"
-  [ ! -f "$filepath" ] && return
+  [[ -z "$filepath" ]] && return 1
+  # Ensure file is inside REPODIR
+  local full_path="$(realpath "$filepath")"
+  if [[ "$full_path" != "$HOME/codex-builds"* ]]; then
+      echo "Traversal attempt blocked." >&2
+      return 1
+  fi
+  [[ ! -f "$full_path" ]] && echo "File not found." >&2 && return 1
+
   python3 -c "
-import json
+import json, sys, os
+filepath = sys.argv[1]
+patterns_file = os.getenv('PATTERNSFILE')
+
 try:
-    p=json.load(open('${SKILLDIR}/failure-patterns.json'))
-    c=open('$filepath').read()
-    for n,d in p.get('patterns',{}).items():
-        if d['detect'] in c: print(f'WARN: Pattern {n}: {d[\"rule\"][:100]}')
-except: pass
-" 2>/dev/null
+    with open(patterns_file, 'r') as f:
+        p = json.load(f)
+    
+    with open(filepath, 'r') as f:
+        for line in f:
+            for n, d in p.get('patterns', {}).items():
+                if d['detect'] in line:
+                    print(f'WARN: Pattern {n}: {d[\"rule\"][:100]}')
+except Exception as e:
+    print(f'Error: {e}', file=sys.stderr)
+    sys.exit(1)
+" "$full_path"
 }
-"${1:-check}" "${2:-}"
+
+case "${1:-check}" in
+    check) check "${2:-}" ;;
+    *) echo "Invalid function"; exit 1 ;;
+esac

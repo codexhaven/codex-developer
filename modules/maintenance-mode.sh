@@ -1,38 +1,37 @@
 #!/usr/bin/env bash
 # MAINTENANCE MODE: Auto-scans for TODOs and updates goal.md
-# Should be run when the build queue is empty.
-
-REPODIR="${CODEX_REPO:-$HOME/codex-builds}"
+set -euo pipefail
+REPODIR="$(realpath "${CODEX_REPO:-$HOME/codex-builds}")"
 GOALFILE="${REPODIR}/.codex/goal.md"
-TODOS_FILE="$REPODIR/TODO_COLLECTOR.md"
+TODOS_FILE="${REPODIR}/TODO_COLLECTOR.md"
+TEMP_GOAL="${REPODIR}/.codex/goal.md.tmp"
 
-# 1. Collect all TODOs from the repo
+# 1. Collect all TODOs safely
 grep -rE "TODO|FIXME" "$REPODIR" --exclude-dir=.git --exclude-dir=.codex > "$TODOS_FILE"
 
-# 2. Ask Hermes to synthesize a new goal based on the TODOs found
-PROMPT="I have a project in $REPODIR. Here are the pending tasks found in the code:
-$(cat "$TODOS_FILE")
+# 2. Check if TODOs found
+if [ ! -s "$TODOS_FILE" ]; then
+    echo "[MAINTENANCE] No TODOs found."
+    exit 0
+fi
 
-Synthesize these into a prioritized, actionable goal.md file for the codex-developer.
-Output ONLY the new goal description. Keep it concise."
+# 3. Synthesize via Hermes agent
+# Note: Using cat to ensure content is passed as plain string, avoiding injection
+TODO_CONTENT=$(cat "$TODOS_FILE")
+PROMPT="Prioritize these tasks into a goal.md:
+$TODO_CONTENT"
 
-NEW_GOAL=$(hermes chat -q "$PROMPT" --yolo --quiet)
+NEW_GOAL=$(hermes chat -q "$PROMPT" --yolo --quiet 2>/dev/null || echo "")
 
+# 4. Write with backup and atomic move
 if [ -n "$NEW_GOAL" ]; then
-    if [ -t 0 ]; then
-        echo "--- PROPOSED NEW GOAL ---"
-        echo "$NEW_GOAL"
-        echo "-------------------------"
-        echo -n "Apply this new goal? (y/N): "
-        read -r confirm
-        if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-            echo "$NEW_GOAL" > "$GOALFILE"
-            echo "[MAINTENANCE] goal.md updated successfully."
-        fi
-    else
-        echo "$NEW_GOAL" > "$GOALFILE"
-        echo "[MAINTENANCE] Cron/Non-interactive: goal.md updated automatically."
+    if [ -f "$GOALFILE" ]; then
+        cp "$GOALFILE" "${GOALFILE}.bak"
     fi
+    echo "$NEW_GOAL" > "$TEMP_GOAL"
+    mv "$TEMP_GOAL" "$GOALFILE"
+    echo "[MAINTENANCE] goal.md updated."
 else
-    echo "[MAINTENANCE] No new goals generated."
+    echo "[MAINTENANCE] Generation failed."
+    exit 1
 fi

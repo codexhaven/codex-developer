@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
+set -euo pipefail
 REPODIR="${HOME}/codex-builds"
+
 run() {
-  [ -d "$REPODIR/tests" ] && cd "$REPODIR" && python3 -m pytest tests/ -q 2>&1 || true
+  if [ -d "$REPODIR/tests" ]; then
+    cd "$REPODIR"
+    python3 -m pytest tests/ -q
+  else
+    echo "Test directory not found: $REPODIR/tests" >&2
+    exit 1
+  fi
 }
-"${1:-run}"
+
+run
