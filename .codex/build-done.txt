@@ -1,1 +1,2 @@
 PATCH: self-update.sh - Command Injection via 'eval'
+PATCH: pattern-matcher.sh - Injection Vulnerability (Command Injection / Arbitrary Code Execution)

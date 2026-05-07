@@ -14,12 +14,18 @@ match_patterns() {
     return
   fi
   
+  # Use environment variables to avoid command injection
+  export PURPOSE="$purpose"
+  export FILE_TYPE="$file_type"
+  export PATTERNSFILE="$PATTERNSFILE"
+  
   python3 -c "
 import json, os
-purpose = '''$purpose'''.lower()
-file_type = '''$file_type'''
+purpose = os.environ.get('PURPOSE', '').lower()
+file_type = os.environ.get('FILE_TYPE', '')
+patterns_file = os.environ.get('PATTERNSFILE', '')
 
-with open('$PATTERNSFILE') as f:
+with open(patterns_file) as f:
     patterns = json.load(f)
 
 matches = []
@@ -55,20 +61,27 @@ add_pattern() {
   
   [ ! -f "$REPODIR/$filepath" ] && return
   
-  local name=$(echo "$filepath" | sed 's|/|_|g' | sed 's/\.[a-z]*$//')
-  local code=$(head -50 "$REPODIR/$filepath" 2>/dev/null | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+  export NAME=$(echo "$filepath" | sed 's|/|_|g' | sed 's/\.[a-z]*$//')
+  export FILEPATH="$REPODIR/$filepath"
+  export PATTERNSFILE="$PATTERNSFILE"
+  
+  # Read file content safely into a variable, then pass to python
+  local code_content=$(head -50 "$REPODIR/$filepath" 2>/dev/null)
+  export CODE_CONTENT="$code_content"
   
   python3 -c "
 import json, os
-name = '$name'
-code = $code
-with open('$PATTERNSFILE') as f:
+name = os.environ.get('NAME')
+code = os.environ.get('CODE_CONTENT')
+patterns_file = os.environ.get('PATTERNSFILE')
+
+with open(patterns_file) as f:
     patterns = json.load(f)
 patterns[name] = code
-with open('$PATTERNSFILE','w') as f:
+with open(patterns_file, 'w') as f:
     json.dump(patterns, f, indent=2)
 "
-  echo "Pattern saved: $name"
+  echo "Pattern saved: $NAME"
 }
 
 "${1:-match}" "${2:-}" "${3:-}"
