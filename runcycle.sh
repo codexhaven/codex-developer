@@ -40,10 +40,8 @@ parse_entry() {
   [ -z "$entry" ] && { echo "MODE=SKIP FILE= DESC="; return; }
   [[ "$entry" =~ ^(NEW|PATCH|SED):[[:space:]]*$ ]] && { echo "MODE=SKIP FILE= DESC="; return; }
   
-  if [[ "$entry" =~ ^SED:[[:space:]]+([^[:space:]].*)[[:space:]]-[[:space:]](.*) ]]; then
-    echo "MODE=SED FILE=${BASH_REMATCH[1]} DESC=${BASH_REMATCH[2]}"
-  elif [[ "$entry" =~ ^PATCH:[[:space:]]+([^[:space:]].*)[[:space:]]-[[:space:]](.*) ]]; then
-    echo "MODE=PATCH FILE=${BASH_REMATCH[1]} DESC=${BASH_REMATCH[2]}"
+  if [[ "$entry" =~ ^(SED|PATCH):[[:space:]]+([^[:space:]].*)[[:space:]]-[[:space:]](.*) ]]; then
+    echo "MODE=${BASH_REMATCH[1]} FILE=${BASH_REMATCH[2]} DESC=${BASH_REMATCH[3]}"
   elif [[ "$entry" =~ ^NEW:[[:space:]]+(.+) ]]; then
     echo "MODE=NEW FILE=${BASH_REMATCH[1]} DESC="
   else

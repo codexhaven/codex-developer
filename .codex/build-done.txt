@@ -1,1 +1,2 @@
 PATCH: /data/data/com.termux/files/home/.hermes/skills/codex-developer/listen.sh - Update analysis_prompt to support SED mode and correct queue filtering.
+PATCH: /data/data/com.termux/files/home/.hermes/skills/codex-developer/runcycle.sh - Fix sed path extraction to correctly handle NEW/PATCH/SED prefixes without corrupting filenames.
