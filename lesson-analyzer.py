@@ -6,15 +6,15 @@ import sys
 import fcntl
 from collections import Counter
 
-# Use environment variables for path configuration
-REPODIR = os.getenv('CODEX_REPO', os.path.expanduser('~/codex-builds'))
-SKILLDIR = os.getenv('SKILLDIR', os.path.expanduser('~/.hermes/skills/codex-developer'))
+# Fix EXISTING mode empty queue fallback and platform-agnostic paths
+REPODIR = os.getenv('CODEX_REPO', os.path.expanduser('~/.codex-builds'))
+SKILLDIR = os.getenv('SKILLDIR', os.path.dirname(os.path.abspath(__file__)))
 LESSONS_FILE = os.path.join(REPODIR, '.codex', 'lessons.jsonl')
 GLOBAL_FILE = os.path.join(SKILLDIR, 'global-knowledge.jsonl')
 
 def analyze():
     if not os.path.exists(LESSONS_FILE):
-        print("No lessons to analyze.")
+        print("ERROR: Lessons file not found at " + LESSONS_FILE, file=sys.stderr)
         return
     
     lessons = []
@@ -30,7 +30,8 @@ def analyze():
         return
     
     if len(lessons) < 3:
-        print(f"Only {len(lessons)} lessons — need at least 3.")
+        # Fallback for empty queue in EXISTING mode: avoid stopping hard
+        print(f"Queue empty or too small ({len(lessons)} lessons) — skipping generation.")
         return
     
     failures = [l for l in lessons if l.get('result') != 'SUCCESS']

@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# CODES-DEVELOPER v11.0 — Review → Findings → Action → Fix → Verify
+set -euo pipefail
+# Reset State Option
+if [ "${RESET_STATE:-false}" = "true" ] && [ -n "${REPODIR:-}" ]; then
+  > "$REPODIR/.codex/build-queue.txt" 
+  > "$REPODIR/.codex/build-done.txt" 
+  echo '{"cycle":0}' > "$REPODIR/.codex/state.json"
+fi
 
 SKILLDIR="${HOME}/.hermes/skills/codex-developer"
 REPODIR=""
@@ -73,11 +79,15 @@ REPODIR="$(realpath "$REPODIR")"
   fi
   
   local code_files=$(find "$REPODIR" -maxdepth 4 -type f \( -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.html" -o -name "*.css" -o -name "*.sh" \) -not -path "*/.git/*" -not -path "*/.codex/*" -not -path "*/__pycache__/*" -not -path "*/node_modules/*" 2>/dev/null | wc -l)
-
+  local code_files=$(find "$REPODIR" -maxdepth 4 -type f \( -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.html" -o -name "*.css" -o -name "*.sh" \) -not -path "*/.git/*" -not -path "*/.codex/*" -not -path "*/__pycache__/*" -not -path "*/node_modules/*" 2>/dev/null | wc -l)
   if echo "$request" | grep -qiE "(reviews/|security review|bug review|code review|audit|scan for|analyze this|find bugs)"; then
     MODE="REVIEW"
   elif [ "$code_files" -lt 1 ]; then
     MODE="NEW"
+  elif [ "$code_files" -eq 0 ]; then
+    echo "Fallback task: Generating a README.md as no significant code was found."
+    echo "PATCH: README.md - Add project description." > "$REPODIR/.codex/build-queue.txt"
+    return
   elif [ -f "$REPODIR/.codex/build-queue.txt" ] && [ -s "$REPODIR/.codex/build-queue.txt" ]; then
     local remaining=$(comm -23 "$REPODIR/.codex/build-queue.txt" "$REPODIR/.codex/build-done.txt" 2>/dev/null | wc -l)
     [ "$remaining" -gt 0 ] && MODE="CONTINUATION" || MODE="EXISTING"

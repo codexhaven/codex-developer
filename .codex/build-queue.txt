@@ -1,11 +1,1 @@
-PATCH: self-update.sh - Command Injection via 'eval'
-PATCH: self-update.sh - Path Traversal/Hardcoded Paths
-PATCH: self-update.sh - Improper File Locking/Race Conditions
-PATCH: self-update.sh - Missing Error Handling in Python snippets
-PATCH: self-update.sh - Use of non-standard file parsing
-PATCH: self-update.sh - Insecure User Input handling
-PATCH: pattern-matcher.sh - Injection Vulnerability (Command Injection / Arbitrary Code Execution)
-PATCH: pattern-matcher.sh - Race Condition (File Corruption)
-PATCH: pattern-matcher.sh - Shell Injection (Path Traversal)
-PATCH: pattern-matcher.sh - Fragile JSON Handling
-PATCH: pattern-matcher.sh - Limited Logic and Maintainability
+PATCH: /data/data/com.termux/files/home/.hermes/skills/codex-developer/lesson-analyzer.py - upgraded to v11.1.0; implemented platform-agnostic paths (REPODIR/SKILLDIR), added fallback for empty queues to prevent hard stops, and improved error logging for queue generation failures.

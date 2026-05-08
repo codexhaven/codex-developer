@@ -1,8 +1,0 @@
-Finding | Risk | Fix
---- | --- | ---
-**Shell Injection:** Using `$built` (filename) directly in `grep` and `sed` patterns without escaping. If a filename contains malicious characters, it could execute arbitrary code. | **Critical** | Use `grep -F` or properly quote and escape filenames/patterns.
-**Insecure `eval`-like behavior:** `all_endpoints+=$(get_py_endpoints ...)` in a loop with arbitrary file contents allows execution of unexpected code inside those files if they contain malicious backticks or shell operators. | **High** | Avoid command substitution on file content. Parse carefully using temporary files or safer Python-based parsing.
-**Regex Fragility:** `grep -oE 'def ([a-zA-Z_][a-zA-Z0-9_]*)'` fails to detect multi-line functions, decorators, or class methods. | **Medium** | Use a proper AST parser (like Python's `ast` module) instead of shell regex.
-**Path Traversal:** No validation on `$REPODIR/$built`. An attacker could theoretically point `$built` to files outside the intended project. | **Medium** | Sanitize paths and use `realpath` to ensure files stay within the project root.
-**Logic Error:** `is_stdlib` hardcodes standard libraries but doesn't account for newer libraries or third-party packages installed in the environment. | **Low** | Use `pip list` or `importlib` to dynamically verify library availability instead of hardcoding.
-**Performance:** Running `grep` in a nested loop over the entire `DONEFILE` for every JavaScript file is $O(N \times M)$ complexity. | **Low** | Pre-calculate a lookup table (associative array/map) of all endpoints once before processing files.

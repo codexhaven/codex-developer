@@ -1,1 +1,0 @@
-modules/symbol-check.sh

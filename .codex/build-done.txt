@@ -1,2 +1,1 @@
-PATCH: self-update.sh - Command Injection via 'eval'
-PATCH: pattern-matcher.sh - Injection Vulnerability (Command Injection / Arbitrary Code Execution)
+PATCH: /data/data/com.termux/files/home/.hermes/skills/codex-developer/lesson-analyzer.py - upgraded to v11.1.0; implemented platform-agnostic paths (REPODIR/SKILLDIR), added fallback for empty queues to prevent hard stops, and improved error logging for queue generation failures.
