@@ -56,7 +56,7 @@ next_file() {
   while IFS= read -r line; do
     [ -z "$line" ] && continue
     # Extract filename for matching (works for both "file.py" and "PATCH: file.py - desc")
-    local fn=$(echo "$line" | sed -E 's/^PATCH:[[:space:]]+//' | sed -E 's/[[:space:]]+-[[:space:]].*//')
+    local fn=$(echo "$line" | sed -E 's/^(NEW|PATCH|SED):[[:space:]]+//' | sed -E 's/[[:space:]]+-[[:space:]].*//')
     if ! echo "$done" | grep -qF "$fn"; then
       echo "$line"; return
     fi

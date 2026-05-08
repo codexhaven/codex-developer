@@ -1,1 +1,2 @@
-PATCH: /data/data/com.termux/files/home/.hermes/skills/codex-developer/lesson-analyzer.py - upgraded to v11.1.0; implemented platform-agnostic paths (REPODIR/SKILLDIR), added fallback for empty queues to prevent hard stops, and improved error logging for queue generation failures.
+PATCH: /data/data/com.termux/files/home/.hermes/skills/codex-developer/listen.sh - Update analysis_prompt to support SED mode and correct queue filtering.
+PATCH: /data/data/com.termux/files/home/.hermes/skills/codex-developer/runcycle.sh - Fix sed path extraction to correctly handle NEW/PATCH/SED prefixes without corrupting filenames.

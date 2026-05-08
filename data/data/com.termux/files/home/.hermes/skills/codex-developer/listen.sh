@@ -303,11 +303,12 @@ mode_new() {
     exit 0
   fi
   
-  # Generate build queue from goal
-  local queue_prompt="GOAL:\n$goal\n\nPersona: $PERSONA. List files to build in order. One per line. Output ONLY file paths."
+  # Generate build queue from build goal
+  local queue_prompt="GOAL:\n$goal\n\nPersona: $PERSONA. List files to build in order. One per line. Output ONLY file paths. 
+  Each path can be a new file OR an existing file followed by - edit details if existing."
   [ "$PERSONA" = "PRODUCT" ] && queue_prompt+=". Ensure README.md is the last file in the queue."
   local queue=$(hermes chat -q "$queue_prompt" --yolo --quiet 2>/dev/null || echo "")
-  [ -n "$queue" ] && echo "$queue" | grep -E '^[a-zA-Z0-9_/.+-]+$' > "$REPODIR/.codex/build-queue.txt" || true
+  [ -n "$queue" ] && echo "$queue" | grep -E '^[a-zA-Z0-9_/.+-]+' > "$REPODIR/.codex/build-queue.txt" || true
   local entries=$(wc -l < "$REPODIR/.codex/build-queue.txt" 2>/dev/null || echo 0)
   echo "Plan: $entries files"
   [ "$entries" -gt 0 ] && cat "$REPODIR/.codex/build-queue.txt"
