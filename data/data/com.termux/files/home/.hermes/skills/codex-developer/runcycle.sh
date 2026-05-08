@@ -39,6 +39,12 @@ case "$action_type" in
   SED)
     echo "BUILT: $target_path"
     # Logic to handle sed content follows here
+    if [ -f "$CODEX_REPO/$target_path" ]; then
+        echo "VERIFIED: $target_path exists. Proceeding with sed."
+    else
+        echo "ERROR: Target $target_path missing."
+        exit 1
+    fi
     ;;
 esac
 

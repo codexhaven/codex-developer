@@ -1,13 +1,14 @@
 {
-  "cycle": 3,
-  "successful_changes": 3,
+  "cycle": 4,
+  "successful_changes": 4,
   "reverts": 0,
   "files_built": [
     "PATCH: /data/data/com.termux/files/home/.hermes/skills/codex-developer/lesson-analyzer.py - upgraded to v11.1.0; implemented platform-agnostic paths (REPODIR/SKILLDIR), added fallback for empty queues to prevent hard stops, and improved error logging for queue generation failures.",
     "PATCH: /data/data/com.termux/files/home/.hermes/skills/codex-developer/listen.sh - Update analysis_prompt to support SED mode and correct queue filtering.",
-    "PATCH: /data/data/com.termux/files/home/.hermes/skills/codex-developer/runcycle.sh - Fix sed path extraction to correctly handle NEW/PATCH/SED prefixes without corrupting filenames."
+    "PATCH: /data/data/com.termux/files/home/.hermes/skills/codex-developer/runcycle.sh - Fix sed path extraction to correctly handle NEW/PATCH/SED prefixes without corrupting filenames.",
+    "PATCH: /data/data/com.termux/files/home/.hermes/skills/codex-developer/runcycle.sh - ensure mark_done is called after sed operations complete by adding explicit success verification and cleanup steps in the loop."
   ],
   "last_action": "[PATCH] /data/data/com.termux/files/home/.hermes/skills/codex-developer/runcycle.sh",
-  "total_lines_changed": 478,
-  "last_success_time": "2026-05-08T07:04:52.064377+00:00"
+  "total_lines_changed": 536,
+  "last_success_time": "2026-05-08T07:19:30.910513+00:00"
 }
