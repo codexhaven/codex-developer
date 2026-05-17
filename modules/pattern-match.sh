@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 SKILLDIR="${HOME}/.hermes/skills/codex-developer"
-REPODIR="${HOME}/codex-builds"
+REPODIR="${HOME}/projects"
 PATTERNSFILE="${SKILLDIR}/patterns.json"
 add() {
   local filepath="$1"

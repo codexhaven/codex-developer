@@ -1,10 +1,10 @@
 ---
 name: codex-developer
 description: >
-  Autonomous software factory (v11.0.0). Natural language interface with
-  persona-aware intent detection. Supports NEW generation, REVIEW analysis,
-  EXISTING enhancement, PATCH surgical fixes, and SED targeted edits.
-version: 11.0.0
+  Autonomous software factory (v12.2). Human-in-the-Loop (HITL) architecture 
+  with mandatory approval, hardened path-agnostic operation, and self-healing 
+  verification loops.
+version: 12.2.0
 metadata:
   required_toolsets: [terminal, file, web]
 ---
@@ -12,60 +12,42 @@ metadata:
 ## Architecture
 
 ### Interface (listen.sh) — The Entry Point
-- Takes natural language requests
-- Detects persona (PRODUCT, EXPERT, LEARNER) based on request phrasing
-- Routes to REVIEW, NEW, CONTINUATION, EXISTING, or FIX modes
-- Clones GitHub repos automatically when URLs detected
-- Generates per-file reviews and SUMMARY.md with findings display
-- Interactive fix approval workflow
+- Takes natural language requests.
+- Detects persona (PRODUCT, EXPERT, LEARNER) automatically.
+- Routes to specialized modes (NEW, REVIEW, CONTINUATION, EXISTING, FIX).
+- Enforces absolute path resolution before execution.
+- Verbose orchestration logging for transparency.
 
 ### Orchestrator (runcycle.sh) — The Engine
-- Multi-mode: NEW files, PATCH (full file rewrite), SED (targeted edits)
-- Persona-aware prompts injected into every Hermes call
-- Path containment security — refuses to write outside REPODIR
-- Syntax verification with rollback on failure
-- Global knowledge injection across projects
-
-## Personas
-
-| Persona | Target | Behavior |
-|---|---|---|
-| PRODUCT | Non-coders | Brief, results-oriented, hides technical logs |
-| EXPERT | Developers | Deep logic, architectural reasoning |
-| LEARNER | Beginners | Step-by-step explanations |
-
-Detected automatically from request phrasing. Persists through all cycles.
+- HITL Model: Mandatory approval (Y/N) before autonomous execution.
+- Multi-mode engine: NEW, PATCH (rewrite), SED (targeted).
+- Persona-aware prompts for context injection.
+- Security: Path containment to $REPODIR.
+- Self-Healing: Automatic rollback on syntax failures; kernel-based recovery.
+- Global Wisdom: Injects mandatory audit rules (Rule #38) into planning cycles.
 
 ## Modes
 
-| Mode | Trigger | What It Does |
+| Mode | Trigger | Description |
 |---|---|---|
-| NEW | Empty project or "build a..." | Plans files, builds from scratch |
-| REVIEW | "Review/audit/scan" | Scans every file, per-file reviews, SUMMARY.md, interactive fix menu |
-| EXISTING | Has code, wants changes | Understands architecture, plans changes, builds |
-| CONTINUATION | Unfinished queue | Resumes where it left off |
-| FIX | "Fix the..." | Targeted SED/PATCH on specific files |
-| CLONE | GitHub URL in request | Clones repo, then REVIEW or EXISTING |
+| NEW | "Build a..." | Scaffold project, plan structure, HITL generation. |
+| REVIEW | "Review/audit" | Full scan, SUMMARY.md generation, inline fix menu. |
+| EXISTING | "Add..." | Logic-aware enhancement, plan, HITL commit. |
+| CONTINUATION| Implicit | Resumes unfinished work from .codex/ queue. |
+| FIX | "Fix..." | Surgical patches via SED/PATCH, verification-loop enabled. |
+
+## Operational Rules (Wisdom)
+- Rule #38: **Pre-Flight Audit Rule.** Before proposing code/imports, perform mandatory filesystem audit (ls -R). Match imports to actual file existence. Create missing modules BEFORE importing.
+- Standard: Absolute pathing enforced for all module inputs.
+- Verification: Mandatory smoke-tester.sh runs after every patch cycle.
 
 ## How to Request
-
-- **New project:** `listen.sh "Build a [thing]" ~/new-folder`
-- **Existing project:** `listen.sh "Add [feature]" ~/existing-project`
-- **Fix something:** `listen.sh "Fix [problem]" ~/project`
-- **Review:** `listen.sh "Review [project] for [issues]" ~/project`
-- **Clone + Review:** `listen.sh "Review https://github.com/user/repo for bugs"`
-- **Continue:** Just run on the same project — it auto-resumes
+- **New Project:** `listen.sh "Build a [thing]" /absolute/path/to/project`
+- **Enhancement:** `listen.sh "Add [feature]" /absolute/path/to/project`
+- **Surgical Fix:** `listen.sh "Fix [problem]" /absolute/path/to/project`
 
 ## Recovery
-
-```bash
-# Reset state
-truncate -s 0 ~/codex-builds/.codex/build-queue.txt
-truncate -s 0 ~/codex-builds/.codex/build-done.txt
-echo '{"cycle":0}' > ~/codex-builds/.codex/state.json
-
-# Rebuild from kernel
-bash ~/.hermes/skills/codex-developer/kernel.sh recover
-
-# Start fresh
-~/.hermes/skills/codex-developer/listen.sh "Build a calculator app"
+If factory drift or loop failure occurs:
+1. Reset state: `truncate -s 0 ~/.codex/build-queue.txt`
+2. Recover: `bash ~/.hermes/skills/codex-developer/kernel.sh recover`
+3. Restart: `listen.sh "Continue/Fix [task]" [path]`

@@ -2,7 +2,7 @@
 #!/usr/bin/env bash
 # SED PATCHER v2 — accepts any sed-like command from Hermes
 set -euo pipefail
-REPODIR="$(realpath "${CODEX_REPO:-$HOME/codex-builds}")"
+REPODIR="$(realpath "${CODEX_REPO:-$HOME/projects}")"
 
 apply_sed_patch() {
   local filepath="$1" desc="$2" goal="$3"

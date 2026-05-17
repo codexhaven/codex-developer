@@ -64,4 +64,20 @@ This project started with a simple question: "Is free Claude Code safe to use?"
 Instead of trusting a leaked binary, the answer became building something transparent, local, and more capable. Codex-developer is the result — a self-improving autonomous developer that runs on free AI, on your device, under your control.
 
 No subscriptions. No surveillance. Just words in, software out.
-EOF
+
+## Operational Modes (v12.2 Update)
+Your factory interprets requests using these modes to determine how to interact with your code:
+
+- **NEW**: Initializes a new project workspace.
+- **EXISTING**: Patches active files based on requests.
+- **ANALYZE**: Actively improves, refactors, or documents a specific file.
+- **REVIEW**: Project-wide read-only audit (Markdown reports).
+- **CHECK**: Diagnostics, import integrity checks, and self-tests.
+- **CONTINUATION**: Resumes pending build queues.
+- **DEPLOY**: Project-wide deployment prep and execution.
+
+## Adversarial Healing Pipeline
+If a build fails, the factory employs a 3-level healing process:
+1. **Literal Fix**: Syntax/import repairs.
+2. **Structural Pivot**: Re-aligns imports with the project map.
+3. **Queue Invalidation**: Prevents cascading failures.

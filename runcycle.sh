@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# VERSION: 10.0.0 — PATCH mode: reads existing files, makes surgical fixes
+# =============================================================================
+# CODES-DEVELOPER v12.2 — Stress-tested — Build Engine
+# Modes: NEW | PATCH (SED fallback for large files)
+# Guardrails: Self-protection, path containment, syntax verification, rollback
+# Phase Gate: check_module_permission + advance_phase_if_complete
+# Brain Memory: project_brain.md injected into every prompt
+# =============================================================================
 
 SKILLDIR="${HOME}/.hermes/skills/codex-developer"
-REPODIR="${CODEX_REPO:-${HOME}/codex-builds}"
+REPODIR="${CODEX_REPO:-${HOME}/projects}"
 GOALFILE="${REPODIR}/.codex/goal.md"
 STATEFILE="${REPODIR}/.codex/state.json"
 QUEUEFILE="${REPODIR}/.codex/build-queue.txt"
@@ -11,37 +17,62 @@ DONEFILE="${REPODIR}/.codex/build-done.txt"
 LESSONSFILE="${REPODIR}/.codex/lessons.md"
 LESSONSJSONL="${REPODIR}/.codex/lessons.jsonl"
 GLOBAL_KNOWLEDGE="${SKILLDIR}/global-knowledge.jsonl"
-PATTERNSFILE="${SKILLDIR}/patterns.json"
 MAXLINES="${MAX_LINES:-120}"
 MAX_RETRIES=3
 
+# --- Locking ---
 LOCKFILE="${TMPDIR:-/tmp}/codex-developer.lock"
 touch "$LOCKFILE" 2>/dev/null || { LOCKFILE="${HOME}/tmp-codex-developer.lock"; mkdir -p "$(dirname "$LOCKFILE")"; touch "$LOCKFILE"; }
-
 acquire_lock() { exec 9>"$LOCKFILE"; flock -n 9 || { echo "[SKIP] Locked."; exit 0; }; }
 release_lock() { flock -u 9 2>/dev/null; rm -f "$LOCKFILE" 2>/dev/null; }
-log() { echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')]" "$@"; }
 
-bash "${SKILLDIR}/kernel.sh" check 2>&1 | while read -r l; do [ -n "$l" ] && log "KERNEL: $l"; done
-  ensure_files() {
+# Improved Logger for colored output
+log() {
+  local level="INFO"
+  local msg="$*"
+  case "$msg" in
+    *FAIL*|*ERROR*) level="ERROR" ;;
+    *SUCCESS*|*BUILT*|*PASS*) level="SUCCESS" ;;
+    *WARN*) level="WARN" ;;
+    *CYCLE*|*PLANNING*) level="DEBUG" ;;
+  esac
+  python3 "${SKILLDIR}/modules/colorlog.py" "$msg" "$level" 2>/dev/null || echo "[$level] $msg"
+}
+
+# --- Advanced Modules ---
+get_project_context() {
+  python3 "${SKILLDIR}/modules/map_project.py" 2>/dev/null || echo "Map generation failed."
+}
+
+check_preemptive_failure() {
+  local goal="$1"
+  grep -ri "$goal" "${SKILLDIR}/failure-patterns.json" 2>/dev/null | head -5 | while read -r line; do
+    echo "WARNING: Pre-emptive prevention - Avoid pattern: $line"
+  done
+}
+
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
+ensure_files() {
   mkdir -p "$REPODIR" "$(dirname "$STATEFILE")"
   [[ -f "$STATEFILE" ]] || echo '{"cycle":0,"successful_changes":0,"reverts":0,"files_built":[]}' > "$STATEFILE"
   touch "$QUEUEFILE" "$DONEFILE" "$GLOBAL_KNOWLEDGE" "$LESSONSJSONL"
   [[ -f "$LESSONSFILE" ]] || echo "# Lessons" > "$LESSONSFILE"
 }
 
-read_goal() { [ -f "$GOALFILE" ] && cat "$GOALFILE" || echo "No goal."; }
+read_goal() { [ -f "$GOALFILE" ] && cat "$GOALFILE" || echo "Build project files."; }
 
-# Parse queue entry: supports "PATCH: file - description" and plain "file"
 parse_entry() {
   local entry="$1"
-  # Strip absolute paths
   entry="${entry#$REPODIR/}"
   [ -z "$entry" ] && { echo "MODE=SKIP FILE= DESC="; return; }
-  [[ "$entry" =~ ^(NEW|PATCH|SED):[[:space:]]*$ ]] && { echo "MODE=SKIP FILE= DESC="; return; }
-  
-  if [[ "$entry" =~ ^(SED|PATCH):[[:space:]]+([^[:space:]].*)[[:space:]]-[[:space:]](.*) ]]; then
-    echo "MODE=${BASH_REMATCH[1]} FILE=${BASH_REMATCH[2]} DESC=${BASH_REMATCH[3]}"
+  [[ "$entry" =~ ^(NEW|PATCH):[[:space:]]*$ ]] && { echo "MODE=SKIP FILE= DESC="; return; }
+  local clean_entry="${entry#NEW: }"
+  clean_entry="${clean_entry#PATCH: }"
+
+  if [[ "$entry" =~ ^PATCH:[[:space:]]+([^[:space:]].*)[[:space:]]-[[:space:]](.*) ]]; then
+    echo "MODE=PATCH FILE=${BASH_REMATCH[1]} DESC=${BASH_REMATCH[2]}"
   elif [[ "$entry" =~ ^NEW:[[:space:]]+(.+) ]]; then
     echo "MODE=NEW FILE=${BASH_REMATCH[1]} DESC="
   else
@@ -53,11 +84,8 @@ next_file() {
   local done=$(cat "$DONEFILE" 2>/dev/null)
   while IFS= read -r line; do
     [ -z "$line" ] && continue
-    # Extract filename for matching (works for both "file.py" and "PATCH: file.py - desc")
-    local fn=$(echo "$line" | sed -E 's/^(NEW|PATCH|SED):[[:space:]]+//' | sed -E 's/[[:space:]]+-[[:space:]].*//')
-    if ! echo "$done" | grep -qF "$fn"; then
-      echo "$line"; return
-    fi
+    local fn=$(echo "$line" | sed -E 's/^(NEW|PATCH):[[:space:]]+//' | sed -E 's/[[:space:]]+-[[:space:]].*//')
+    if ! echo "$done" | grep -qF "$fn"; then echo "$line"; return; fi
   done < "$QUEUEFILE"
   echo ""
 }
@@ -76,171 +104,97 @@ get_global_knowledge() {
 
 get_built_context() {
   local mode="$1" target="$2"
-  local done=$(cat "$DONEFILE" 2>/dev/null)
-  
-  # For PATCH mode: ALWAYS include the target file
   if [ "$mode" = "PATCH" ] && [ -f "$REPODIR/$target" ]; then
-    echo "--- PATCH TARGET: $target (COMPLETE FILE) ---"
+    echo "--- CURRENT FILE: $target ---"
     cat "$REPODIR/$target"
     echo ""
-  fi
-  
-  # Include other existing/built files as context
-  if [ -z "$done" ]; then
-    local count=0
-    while IFS= read -r f; do
-      [ $count -ge 4 ] && break
-      [ "$f" = "$REPODIR/$target" ] && continue
-      [ -f "$f" ] && [ -s "$f" ] || continue
-      local size=$(wc -l < "$f" 2>/dev/null || echo 0)
-      [ "$size" -gt 0 ] && [ "$size" -lt 500 ] || continue
-      echo "--- CONTEXT: ${f#$REPODIR/} (first 50 lines) ---"
-      head -50 "$f"
+    if [ -f "$REPODIR/.codex/cycle-log.jsonl" ]; then
+      echo "--- RECENT CHANGES ---"
+      tail -3 "$REPODIR/.codex/cycle-log.jsonl" 2>/dev/null
       echo ""
-      count=$((count + 1))
-    done < <(find "$REPODIR" -maxdepth 2 -type f -name "*.py" -not -path "*/.git/*" -not -path "*/__pycache__/*" 2>/dev/null | head -10)
-  else
-    for f in $done; do
-      [ "$f" = "$target" ] && continue
-      local fp="$REPODIR/$f"
-      [ -f "$fp" ] && echo "--- BUILT: $f ---" && cat "$fp" && echo ""
-    done
+    fi
   fi
+  local count=0
+  while IFS= read -r f; do
+    [ $count -ge 3 ] && break
+    [ "$f" = "$REPODIR/$target" ] && continue
+    [ -f "$f" ] && [ -s "$f" ] || continue
+    local size=$(wc -l < "$f" 2>/dev/null || echo 0)
+    [ "$size" -gt 0 ] && [ "$size" -lt 500 ] || continue
+    echo "--- RELATED: ${f#$REPODIR/} (first 50 lines) ---"
+    head -50 "$f"; echo ""
+    count=$((count + 1))
+  done < <(find "$REPODIR" -maxdepth 2 -type f \( -name "*.py" -o -name "*.js" -o -name "*.sh" \) -not -path "*/.git/*" -not -path "*/__pycache__/*" 2>/dev/null | head -8)
 }
 
-generate_queue() {
-  local goal="$1" knowledge="$2"
-  log "PLANNING: Generating build order..."
-  
-  # Detect fix vs new
-  local prompt
-  if echo "$goal" | grep -qi "fix\|repair\|patch\|fcntl\|sanitize\|refactor\|add lock\|add fcntl\|path traversal"; then
-    prompt="## GOAL
-$goal
-
-## INSTRUCTIONS
-This is a FIX request on an existing project.
-Output SED or PATCH entries targeting EXISTING files only.
-Format:
-SED: path/to/existing.py - brief description of change
-PATCH: path/to/existing.py - brief description of change
-
-Do NOT create new files. Target only files that already exist in the project.
-One entry per line."
-  else
-    prompt="## GOAL
-$goal
-
-## INSTRUCTIONS
-List files to build in dependency order. One per line.
-Output ONLY file paths. No markdown."
+# =============================================================================
+# SELF-PROTECTION
+# =============================================================================
+self_protect() {
+  local filepath="$1"
+  local resolved=$(readlink -f "$REPODIR/$filepath" 2>/dev/null || echo "$REPODIR/$filepath")
+  if [[ "$resolved" == "$SKILLDIR"* ]]; then
+    echo ""
+    echo "=============================================="
+    echo "  SELF-PROTECTION: Cannot modify codex source"
+    echo "  File: $filepath"
+    echo "=============================================="
+    return 1
   fi
-
-  local output
-  output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
-  [ -z "$output" ] && { log "FAIL: No plan."; return 1; }
-  echo "$output" | grep -E '^[a-zA-Z0-9_/.+:-]+$' > "$QUEUEFILE" || true
-  local count=$(wc -l < "$QUEUEFILE" 2>/dev/null || echo 0)
-  log "PLANNED: $count entries"
-  [ "$count" -gt 0 ] && cat "$QUEUEFILE"
+  return 0
 }
 
-# Persona-based instructions
-get_persona_instruction() {
-  case "${PERSONA:-LEARNER}" in
-    "PRODUCT") echo "You are a product builder. Provide brief, results-oriented updates. Hide complex technical logs." ;;
-    "EXPERT") echo "You are a software architect. Focus on logic, dependency chains, and architectural integrity. Provide deep technical reasoning." ;;
-    *) echo "You are a helpful assistant. Explain your steps clearly for a learner." ;;
-  esac
-}
-
+# =============================================================================
+# BUILD FILE
+# =============================================================================
 build_file() {
-  local filepath="$1" goal="$2" built="$3" knowledge="$4" mode="${5:-NEW}" desc="${6:-}" attempt=0
-  local persona_instruction=$(get_persona_instruction)
-  
+  local filepath="$1" goal="$2" built="$3" mode="${4:-NEW}" desc="${5:-}" attempt=0
+
   while [ $attempt -lt $MAX_RETRIES ]; do
     attempt=$((attempt + 1))
     [ $attempt -gt 1 ] && log "RETRY $attempt/$MAX_RETRIES for $filepath"
-    
-    # Read previous failures for context
-    local failure_reason=""
-    if [ -f "${REPODIR}/.codex/last_error.log" ]; then
-      failure_reason=$(cat "${REPODIR}/.codex/last_error.log")
-      rm -f "${REPODIR}/.codex/last_error.log"
-    fi
 
     local prompt
     if [ "$mode" = "PATCH" ]; then
       prompt="## MODE: PATCH EXISTING FILE
-## GLOBAL KNOWLEDGE
-$knowledge
-
-## PREVIOUS ATTEMPT FAILURE
-$failure_reason
-
-## PROJECT GOAL
-$goal
-
-## PERSONA: $PERSONA
-$persona_instruction
-
+## PROJECT GOAL: $goal
 ## TARGET FILE: $filepath
 ## REQUESTED CHANGE: $desc
+## INSTRUCTIONS: Make ONLY the change described above. Keep everything else IDENTICAL. Do NOT rewrite unrelated code. Do NOT remove functionality. Read the CURRENT FILE first. Only modify the requested sections. Preserve ALL existing imports and functionality.
+## Output format: FILE: $filepath followed by the COMPLETE modified file contents.
 
-$built
-
-## INSTRUCTIONS
-You are PATCHING an existing file. 
-- The COMPLETE current file is shown above as PATCH TARGET.
-- Make ONLY the change described in REQUESTED CHANGE.
-- Keep EVERYTHING ELSE exactly the same.
-- Do NOT rewrite unrelated code.
-- Do NOT remove existing functionality.
-- Maximum $MAXLINES lines total.
-- If previous attempts failed, change your approach (e.g. use full-file rewrite instead of sed).
-
-Output format:
-FILE: $filepath
-(complete modified file contents)"
+$built"
     else
-      prompt="## MODE: NEW FILE
-## GLOBAL KNOWLEDGE
-$knowledge
+      prompt="## MODE: CREATE NEW FILE
+## PROJECT GOAL: $goal
+## TARGET FILE: $filepath
+## INSTRUCTIONS: Build this COMPLETE file. No TODOs. No placeholders. Working code. CRITICAL: Only import from files that exist in this project or standard libraries.
+## Output format: FILE: $filepath followed by complete file contents.
 
-## PROJECT GOAL
-$goal
-
-## PERSONA: $PERSONA
-$persona_instruction
-
-## FILE TO BUILD: $filepath
-
-$built
-
-## INSTRUCTIONS
-Build the COMPLETE file at '$filepath'.
-- Write complete working code. No TODOs. No placeholders.
-- Maximum $MAXLINES lines.
-
-Output format:
-FILE: $filepath
-(complete file contents)"
+$built"
     fi
+
+    # Inject Recursive Brain
+    [ -f "$REPODIR/.codex/project_brain.md" ] && prompt="## MASTER BRAIN CONTEXT"$'\n'"$(cat "$REPODIR/.codex/project_brain.md")"$'\n\n'"$prompt"
 
     local output
     output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
     if [ -n "$output" ] && echo "$output" | grep -q "FILE:"; then
       echo "$output"; return 0
     fi
-    log "WARN: Empty output (attempt $attempt)"
+    log "WARN: Empty output for $filepath (attempt $attempt)"
   done
-  log "FAIL: Could not generate $filepath"
+  log "FAIL: Could not generate $filepath after $MAX_RETRIES attempts"
   return 1
 }
 
+# =============================================================================
+# APPLY FILE TO DISK
+# =============================================================================
 apply_file() {
   local output="$1"
   local filepath="" content="" found_first=false
+
   while IFS= read -r line; do
     if [[ "$line" =~ ^FILE:[[:space:]]+(.*) ]] && [ "$found_first" = false ]; then
       filepath="${BASH_REMATCH[1]}"; found_first=true
@@ -248,43 +202,61 @@ apply_file() {
       content+="$line"$'\n'
     fi
   done <<< "$output"
-  [ -n "$filepath" ] && [ -n "$content" ] && {
-    # SECURITY: Never write outside REPODIR
-    local fp="$REPODIR/$filepath"
-    # Resolve to absolute and verify it starts with REPODIR
-    fp=$(readlink -f "$fp" 2>/dev/null || echo "$fp")
-    if [[ "$fp" != "$REPODIR"* ]]; then
-      log "SECURITY: Blocked write outside project: $fp"
-      return 1
-    fi
-    mkdir -p "$(dirname "$fp")"
-    printf '%s' "$content" > "$fp"; echo "$filepath"; return 0
-  }
-  return 1
+
+  content=$(echo "$content" | sed "/^\`\`\`/d")
+  [ -n "$filepath" ] && [ -n "$content" ] || return 1
+
+  # Strip REPODIR prefix and leading slash to prevent path doubling
+  filepath="${filepath#$REPODIR/}"
+  filepath="${filepath#/}"
+
+  if ! self_protect "$filepath"; then return 1; fi
+
+  local fp="$REPODIR/$filepath"
+  local resolved=$(readlink -f "$fp" 2>/dev/null || echo "$fp")
+  if [[ "$resolved" != "$REPODIR"* ]]; then
+    log "SECURITY: Blocked write outside project: $resolved"
+    return 1
+  fi
+
+  mkdir -p "$(dirname "$fp")"
+  printf '%s' "$content" > "$fp"
+  echo "$filepath"
+  return 0
 }
 
+# =============================================================================
+# VERIFY
+# =============================================================================
 verify_file() {
-  local fp="$REPODIR/$1"; [ -f "$fp" ] || { log "VERIFY FAIL: $1 missing"; return 1; }
+  local fp="$REPODIR/$1"
+  [ -f "$fp" ] || { log "VERIFY FAIL: $1 missing"; return 1; }
   case "${1##*.}" in
     py) python3 -m py_compile "$fp" 2>&1 || { log "VERIFY FAIL: $1"; return 1; } ;;
     html|htm) python3 -m html.parser "$fp" 2>/dev/null || { log "VERIFY FAIL: $1"; return 1; } ;;
-    js) node --check "$fp" 2>/dev/null || true ;;
+    js|ts|tsx|jsx) node --check "$fp" 2>/dev/null || true
+      bash "${SKILLDIR}/modules/import-check.sh" "$fp" "$REPODIR" 2>/dev/null | while read -r warn; do
+        [ -n "$warn" ] && log "$warn"
+      done
+      ;;
   esac
   return 0
 }
 
+# =============================================================================
+# STATE MANAGEMENT
+# =============================================================================
 mark_done() {
   local filepath="$1" lines="$2" mode="$3" entry="$4"
   echo "$entry" >> "$DONEFILE"
   python3 -c "
-import json, datetime, os
+import json, os
 s=json.load(open('$STATEFILE'))
 s['cycle']=s.get('cycle',0)+1
 s['last_action']='[$mode] $filepath'
 s['successful_changes']=s.get('successful_changes',0)+1
 s['total_lines_changed']=s.get('total_lines_changed',0)+$lines
 fb=s.get('files_built',[]); fb.append('$entry'); s['files_built']=fb
-s['last_success_time']=datetime.datetime.now(datetime.UTC).isoformat()
 tmp='$STATEFILE.tmp'; json.dump(s,open(tmp,'w'),indent=2); os.replace(tmp,'$STATEFILE')
 " 2>/dev/null || true
 }
@@ -299,93 +271,276 @@ commit_all() {
   cd "$REPODIR"
   [ -d .git ] || { git init; git config user.email "codex@localhost"; git config user.name "Codex"; }
   git add -A && git commit -m "[Cycle] $1" 2>/dev/null || true
-  # Log change to CHANGELOG
   echo "- [$(date +'%Y-%m-%d %H:%M')] $1" >> "${REPODIR}/CHANGELOG.md"
 }
 
+generate_queue() {
+  local goal="$1"
+  log "PLANNING: Generating build order with directory awareness..."
+  local subdirs=$(find "$REPODIR" -maxdepth 2 -type d -not -path "*/.*" | grep -v "$REPODIR" | sed "s|$REPODIR/||")
+
+  local prompt="## GOAL
+$goal
+
+## EXISTING DIRECTORIES
+$(echo "$subdirs" | sed 's/^/- /')
+
+## INSTRUCTIONS
+List files to build in dependency order. Output ONLY file paths. No markdown."
+
+  local output
+  output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
+  [ -z "$output" ] && { log "FAIL: No plan."; return 1; }
+  echo "$output" | grep -E '\.(py|js|ts|tsx|jsx|html|css|md|txt|json|yml|yaml|sh|toml|example|gitignore)' > "$QUEUEFILE" || true
+
+  local count=$(wc -l < "$QUEUEFILE" 2>/dev/null || echo 0)
+  log "PLANNED: $count files"
+  [ "$count" -gt 0 ] && cat "$QUEUEFILE"
+}
+
+# =============================================================================
+# MAIN
+# =============================================================================
 main() {
-  [ -n "${1:-}" ] && REPODIR="$1"
+  # --- SANDBOX INJECTION HOOK ---
+  [ -d "${SKILLDIR}/sandbox" ] && for s in "${SKILLDIR}/sandbox/"*.sh; do source "$s"; done
+
+  [ -n "${1:-}" ] && export REPODIR="$(readlink -f "$1")"
   acquire_lock
   trap release_lock EXIT
   ensure_files
 
-  local goal=$(read_goal)
+  local goal
+  goal=$(read_goal)
+  export goal
 
-  if [ ! -s "$QUEUEFILE" ]; then
-    local file_count=$(find "$REPODIR" -maxdepth 3 -type f -not -path "*/.git/*" -not -path "*/.codex/*" -not -path "*/__pycache__/*" 2>/dev/null | wc -l)
-    if [ "$file_count" -gt 3 ]; then
-      log "EXISTING PROJECT: $file_count files. Generating queue from goal..."
-      generate_queue "$goal" "$(get_global_knowledge "$goal")" || exit 1
-    else
-      local tmpl; tmpl=$(bash "${SKILLDIR}/modules/template-detect.sh" detect "$goal" 2>/dev/null || echo "")
-      if [ -n "$tmpl" ]; then echo "$tmpl" > "$QUEUEFILE"; log "TEMPLATE: Using project template"
-      else generate_queue "$goal" "$(get_global_knowledge "$goal")" || exit 1; fi
+  FAILURE_COUNT=$(python3 -c "import json; print(json.load(open('$STATEFILE')).get('failure_count', 0))" 2>/dev/null || echo 0)
+
+  # Run before-build plugins
+  bash "${SKILLDIR}/modules/vibestack/apply.sh" || true
+  bash "${SKILLDIR}/modules/flaskstack/apply.sh" 2>/dev/null || true
+  bash "${SKILLDIR}/modules/vanillastack/apply.sh" 2>/dev/null || true
+  bash "${SKILLDIR}/modules/gitignore-init.sh" 2>/dev/null || true
+
+  local max_cycles=30
+  while [ $max_cycles -gt 0 ]; do
+    max_cycles=$((max_cycles - 1))
+
+    if [ ! -s "$QUEUEFILE" ]; then
+      local file_count=$(find "$REPODIR" -maxdepth 3 -type f -not -path "*/.git/*" -not -path "*/.codex/*" -not -path "*/__pycache__/*" 2>/dev/null | wc -l)
+      if [ "$file_count" -gt 3 ]; then
+        log "EXISTING PROJECT: $file_count files."
+        generate_queue "$goal" || break
+      else
+        local tmpl; tmpl=$(bash "${SKILLDIR}/modules/template-detect.sh" detect "$goal" 2>/dev/null || echo "")
+        if [ -n "$tmpl" ]; then echo "$tmpl" > "$QUEUEFILE"; log "TEMPLATE: Using project template"
+        else generate_queue "$goal" || break; fi
+      fi
     fi
-  fi
 
-  local entry=$(next_file)
-  if [ -z "$entry" ]; then
-    log "QUEUE EMPTY. Running maintenance mode..."
-    bash "${SKILLDIR}/modules/maintenance-mode.sh"
-    log "MAINTENANCE DONE. Checking for new queue..."
-    generate_queue "$(cat "$GOALFILE")" "$(get_global_knowledge)"
-    
-    entry=$(next_file)
+    local entry=$(next_file)
     if [ -z "$entry" ]; then
-      log "ALL DONE. Nothing to do."
-      exit 0
+      log "ALL DONE."
+      run_plugins "after-all-done" 2>/dev/null || true
+      break
     fi
+
+    local parsed=$(parse_entry "$entry")
+    local mode=$(echo "$parsed" | sed "s/MODE=//;s/ .*//")
+    local current=$(echo "$parsed" | sed "s/.*FILE=//;s/ .*//")
+    current="${current#NEW: }"
+    current="${current#NEW:}"
+    current="${current#PATCH: }"
+    current="${current#PATCH:}"
+    current="${current#/}"
+    local desc=$(echo "$parsed" | sed -E 's/.*DESC=(.*)/\1/')
+
+    [ "$mode" = "SKIP" ] && continue
+
+    # --- PHASE GATE ---
+    if type check_module_permission >/dev/null 2>&1; then
+        if ! check_module_permission "$current" "core-engine"; then
+             log "PHASE-GATE: Deferring $current (out of active phase)"
+             echo "$entry" >> "$DONEFILE"
+             echo "$entry" >> "$QUEUEFILE"
+             continue
+        fi
+    fi
+
+    local cycle=$(python3 -c "import json; print(json.load(open('$STATEFILE')).get('cycle',0)+1)" 2>/dev/null || echo "1")
+    log "CYCLE $cycle | $mode: $current"
+
+    local built=$(get_built_context "$mode" "$current")
+    local context_map=$(get_project_context)
+    local failure_warnings=$(check_preemptive_failure "$goal")
+    local global_wisdom=$(grep -h '"type": "rule"' "$GLOBAL_KNOWLEDGE" 2>/dev/null | python3 -c "import json,sys; [print(f'- {json.loads(line).get(\"rule\")}') for line in sys.stdin]" 2>/dev/null)
+
+    local prompt
+    if [ "$mode" = "PATCH" ]; then
+      prompt="## MODE: PATCH EXISTING FILE
+## PROJECT GOAL: $goal
+## GLOBAL WISDOM (MANDATORY):
+$global_wisdom
+## PROJECT MAP: $context_map
+$failure_warnings
+## TARGET FILE: $current
+## REQUESTED CHANGE: $desc
+## INSTRUCTIONS: Make ONLY the change described above. Keep everything else IDENTICAL. Read the CURRENT FILE first. Preserve ALL existing imports and functionality.
+## Output format: FILE: $current followed by the COMPLETE modified file contents.
+
+$built"
+    else
+      prompt="## MODE: CREATE NEW FILE
+## PROJECT GOAL: $goal
+## GLOBAL WISDOM (MANDATORY):
+$global_wisdom
+## PROJECT MAP: $context_map
+$failure_warnings
+## TARGET FILE: $current
+## INSTRUCTIONS: Build this COMPLETE file. No TODOs. No placeholders. Working code.
+## Output format: FILE: $current followed by complete file contents.
+
+$built"
+    fi
+
+    # Inject Recursive Brain
+    [ -f "$REPODIR/.codex/project_brain.md" ] && prompt="## MASTER BRAIN CONTEXT"$'\n'"$(cat "$REPODIR/.codex/project_brain.md")"$'\n\n'"$prompt"
+
+    local output
+    output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
+
+    if [ -z "$output" ] && [ "$mode" = "PATCH" ] && [ -f "$REPODIR/$current" ]; then
+      local file_size=$(wc -c < "$REPODIR/$current" 2>/dev/null || echo 0)
+      if [ "$file_size" -gt 10000 ]; then
+        log "File too large for PATCH ($file_size bytes). Trying SED patcher..."
+        if CODEX_REPO="$REPODIR" bash "${SKILLDIR}/modules/sed-patcher.sh" "$current" "$desc" "$goal" 2>/dev/null; then
+          log "SED patcher succeeded"
+          local lines=$(wc -l < "$REPODIR/$current" 2>/dev/null || echo 0)
+          mark_done "$current" "$lines" "SED" "$entry"
+          commit_all "$current"
+          continue
+        fi
+      fi
+    fi
+
+    if [ -z "$output" ]; then
+      log "FAIL: Could not build $current"
+      FAILURE_COUNT=$((FAILURE_COUNT + 1))
+      if [ "$FAILURE_COUNT" -gt 3 ]; then
+        log "[ERROR] Threshold reached (Generation Failure). Engaging HEALER."
+        bash "${SKILLDIR}/modules/healer.sh"
+        FAILURE_COUNT=0
+      fi
+      continue
+    fi
+
+    local applied=""
+    local enforced=$(python3 "${SKILLDIR}/modules/enforce_path.py" "$current" "$REPODIR" 2>/dev/null || echo "$current")
+    current="$enforced"
+
+    applied=$(apply_file "$output") || true
+    applied="${applied#/}"
+    if [ -z "$applied" ]; then
+      log "FAIL: Could not apply $current"
+      continue
+    fi
+
+    # --- Structural Healing Pipeline ---
+    if ! verify_file "$applied"; then
+      log "Syntax failure in $applied. Initiating Adversarial Healing..."
+      local err_log=$(cat "${REPODIR}/.codex/last_error.log" 2>/dev/null || echo "Unknown syntax error")
+      local fix_prompt="## MODE: FIX SYNTAX ERROR
+## TARGET FILE: $applied
+## ERROR: $err_log
+## INSTRUCTIONS: Fix the syntax error. Do not change logic."
+      output=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
+
+      if ! echo "$output" | grep -q "FILE:"; then
+         log "Level 1 fix failed. Pivoting to Structural Healing..."
+         local map=$(python3 "${SKILLDIR}/modules/map_project.py")
+         fix_prompt="## MODE: STRUCTURAL HEALING
+## TARGET FILE: $applied
+## PROJECT MAP: $map
+## ERROR: $err_log
+## INSTRUCTIONS: Re-align imports with the Project Map above."
+         output=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
+      fi
+
+      if echo "$output" | grep -q "FILE:"; then
+        apply_file "$output"
+      else
+        log "CRITICAL: Structural Healing failed. Invaliding downstream dependencies."
+        echo "$current" >> "$DONEFILE"
+        continue
+      fi
+    fi
+    log "VERIFY: PASS"
+
+    # Functional Smoke Test
+    bash "${SKILLDIR}/modules/smoke-tester.sh" "$REPODIR" || {
+      log "SMOKE FAIL"
+      FAILURE_COUNT=$((FAILURE_COUNT + 1))
+      if [ "$FAILURE_COUNT" -gt 3 ]; then
+        log "[ERROR] Threshold reached. Engaging HEALER."
+        bash "${SKILLDIR}/modules/healer.sh"
+        FAILURE_COUNT=0
+      else
+        log "[WARN] Smoke failure. Retry $FAILURE_COUNT/3"
+      fi
+      revert_file "$applied"; continue;
+    }
+
+    # Dynamic Dependency Queueing
+    python3 "${SKILLDIR}/modules/scan_deps.py" "$REPODIR/$applied" "$REPODIR" "$QUEUEFILE" 2>/dev/null || true
+
+    run_plugins "after-verify" 2>/dev/null || true
+
+    bash "${SKILLDIR}/modules/failure-check.sh" check "$REPODIR/$applied" 2>/dev/null || true
+
+    local lines=$(wc -l < "$REPODIR/$applied" 2>/dev/null || echo 0)
+
+    # Atomic Journaling
+    local tmp_state="$STATEFILE.tmp"
+    python3 -c "
+import json, os
+s=json.load(open('$STATEFILE'))
+s['cycle']=s.get('cycle',0)+1
+s['last_action']='[$mode] $current'
+s['successful_changes']=s.get('successful_changes',0)+1
+s['total_lines_changed']=s.get('total_lines_changed',0)+$lines
+fb=s.get('files_built',[]); fb.append('$entry'); s['files_built']=fb
+json.dump(s, open('$tmp_state', 'w'), indent=2)
+os.replace('$tmp_state', '$STATEFILE')
+" 2>/dev/null || true
+    echo "$entry" >> "$DONEFILE"
+
+    mkdir -p "$REPODIR/.codex"
+    echo "{\"cycle\":$cycle,\"file\":\"$applied\",\"mode\":\"$mode\",\"desc\":\"$desc\",\"time\":\"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"}" >> "$REPODIR/.codex/cycle-log.jsonl" 2>/dev/null || true
+
+    commit_all "$applied"
+
+    # Post-generation strengthening pass
+    if type strengthen_file >/dev/null 2>&1; then
+      strengthen_file "$applied"
+      cd "$REPODIR" && git add -A && git commit -m "[Strengthen] $applied" 2>/dev/null || true
+    fi
+
+    # Global Memory Consolidation
+    python3 "${SKILLDIR}/lesson-analyzer.py" --consolidate "$REPODIR" 2>/dev/null || true
+
+    # Check if current phase is complete -> advance to next
+    if type advance_phase_if_complete >/dev/null 2>&1; then
+      advance_phase_if_complete
+    fi
+
+    log "$mode: $applied (${lines}L)"
+  done
+
+  if [ -d "$REPODIR/tests" ]; then
+    log "Running tests..."
+    bash "${SKILLDIR}/modules/self-test.sh" "$REPODIR" 2>&1 | while read -r l; do [ -n "$l" ] && log "TEST: $l"; done
   fi
-
-  local parsed=$(parse_entry "$entry")
-  local mode=$(echo "$parsed" | sed "s/MODE=//;s/ .*//")
-  local current=$(echo "$parsed" | sed "s/.*FILE=//;s/ .*//")
-  local desc=$(echo "$parsed" | awk -F'DESC=' '/DESC=/ {print $2}')
-
-  local cycle=$(python3 -c "import json; print(json.load(open('$STATEFILE')).get('cycle',0)+1)" 2>/dev/null || echo "1")
-  log "CYCLE $cycle | $mode: $current"
-
-  local built=$(get_built_context "$mode" "$current")
-
-  local output
-  if [ "$mode" = "SED" ]; then
-    log "DEBUG: SED branch entered, current=$current"
-    log "SED PATCH: Applying targeted changes to $current..."
-    CODEX_REPO="$REPODIR" bash "${SKILLDIR}/modules/sed-patcher.sh" "$current" "$desc" "$goal" && output="FILE: $current" || output=""
-  elif [ "$mode" = "PATCH" ]; then
-    log "PATCH MODE: Generating surgical update for $current..."
-    output=$(build_file "$current" "$goal" "$built" "$(get_global_knowledge "$goal")" "$mode" "$desc")
-  else
-    output=$(build_file "$current" "$goal" "$built" "$(get_global_knowledge "$goal")" "$mode" "$desc")
-  fi
-  if [ $? -ne 0 ] || [ -z "$output" ]; then log "FAIL: SED or Build failed"; revert_file "$current"; exit 1; fi
-
-  local applied
-  if [ "$mode" = "SED" ]; then
-    log "DEBUG: SED branch entered, current=$current"
-    # SED mode already applied changes and verified syntax
-    applied="$current"
-    log "DEBUG: applied=$applied, about to verify"
-  else
-    applied=$(apply_file "$output")
-    [ -z "$applied" ] && { log "FAIL: Could not parse output"; revert_file "$current"; exit 1; }
-  fi
-
-  if ! verify_file "$applied"; then
-    log "VERIFY FAIL: $applied"
-    echo "Verification failed for $applied" > "${REPODIR}/.codex/last_error.log"
-    revert_file "$applied"; exit 1
-  fi
-  log "VERIFY: PASS"
-
-  local lines=$(wc -l < "$REPODIR/$applied" 2>/dev/null || echo 0)
-  mark_done "$applied" "$lines" "$mode" "$entry"
-    log "DEBUG: mark_done called"
-  commit_all "$applied"
-
-  local next=$(next_file)
-  [ -z "$next" ] && next="DONE"
-  log "$mode: $applied (${lines}L) | NEXT: $next"
+  bash "${SKILLDIR}/modules/symbol-check.sh" "$REPODIR" 2>&1 | while read -r l; do [ -n "$l" ] && log "SYMBOL: $l"; done
 }
 
 main "$@"

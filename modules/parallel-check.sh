@@ -3,7 +3,7 @@ set -euo pipefail
 
 # parallel-check.sh - Check parallel build dependencies
 
-REPODIR="${HOME}/codex-builds"
+REPODIR="${HOME}/projects"
 
     echo "Checking parallel build dependencies"; can_parallel; 
 

@@ -7,7 +7,7 @@ import fcntl
 from collections import Counter
 
 # Fix EXISTING mode empty queue fallback and platform-agnostic paths
-REPODIR = os.getenv('CODEX_REPO', os.path.expanduser('~/.codex-builds'))
+REPODIR = os.getenv('CODEX_REPO', os.path.expanduser('~/.projects'))
 SKILLDIR = os.getenv('SKILLDIR', os.path.dirname(os.path.abspath(__file__)))
 LESSONS_FILE = os.path.join(REPODIR, '.codex', 'lessons.jsonl')
 GLOBAL_FILE = os.path.join(SKILLDIR, 'global-knowledge.jsonl')

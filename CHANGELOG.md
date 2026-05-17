@@ -1,6 +1,0 @@
-- [2026-05-06 23:09] runcycle.sh
-- [2026-05-08 01:16] self-update.sh
-- [2026-05-08 01:17] pattern-matcher.sh
-- [2026-05-08 09:56] /data/data/com.termux/files/home/.hermes/skills/codex-developer/lesson-analyzer.py
-- [2026-05-08 10:03] /data/data/com.termux/files/home/.hermes/skills/codex-developer/listen.sh
-- [2026-05-08 10:04] /data/data/com.termux/files/home/.hermes/skills/codex-developer/runcycle.sh

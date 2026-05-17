@@ -1,36 +1,42 @@
 #!/usr/bin/env bash
-# MAINTENANCE MODE: Auto-scans for TODOs and updates goal.md
+# MAINTENANCE MODE v12.2: Hardened HITL Audit & TODO Synthesis
 set -euo pipefail
-REPODIR="$(realpath "${CODEX_REPO:-$HOME/codex-builds}")"
+
+# Use absolute path resolution
+REPODIR="$(readlink -f "${CODEX_REPO:-$HOME/projects}")"
 GOALFILE="${REPODIR}/.codex/goal.md"
-TODOS_FILE="${REPODIR}/TODO_COLLECTOR.md"
-TEMP_GOAL="${REPODIR}/.codex/goal.md.tmp"
+TODOS_FILE="${REPODIR}/.codex/TODO_COLLECTOR.md"
 
-# 1. Collect all TODOs safely
-grep -rE "TODO|FIXME" "$REPODIR" --exclude-dir=.git --exclude-dir=.codex > "$TODOS_FILE"
+echo "[MAINTENANCE] Performing Pre-Flight FS Audit..."
+# 1. Audit current FS state
+FILES_AUDIT=$(ls -R "$REPODIR" | grep -v ".git" | grep -v ".codex" | grep -v "__pycache__")
 
-# 2. Check if TODOs found
+# 2. Collect TODOs
+grep -rE "TODO|FIXME" "$REPODIR" --exclude-dir=.git --exclude-dir=.codex --exclude-dir=node_modules > "$TODOS_FILE"
+
 if [ ! -s "$TODOS_FILE" ]; then
-    echo "[MAINTENANCE] No TODOs found."
+    echo "[MAINTENANCE] No TODOs found. Clean state."
     exit 0
 fi
 
-# 3. Synthesize via Hermes agent
-# Note: Using cat to ensure content is passed as plain string, avoiding injection
+# 3. Synthesize via Codex Wisdom
 TODO_CONTENT=$(cat "$TODOS_FILE")
-PROMPT="Prioritize these tasks into a goal.md:
-$TODO_CONTENT"
+PROMPT="As a v12.2 factory engine, audit the project using this filesystem:
+$FILES_AUDIT
+
+And synthesize these TODOs into a priority-ordered goal.md:
+$TODO_CONTENT
+
+Follow Rule #41 (Pre-Flight Audit): Verify all task dependencies exist in the project map."
 
 NEW_GOAL=$(hermes chat -q "$PROMPT" --yolo --quiet 2>/dev/null || echo "")
 
-# 4. Write with backup and atomic move
+# 4. Atomic Write
 if [ -n "$NEW_GOAL" ]; then
-    if [ -f "$GOALFILE" ]; then
-        cp "$GOALFILE" "${GOALFILE}.bak"
-    fi
-    echo "$NEW_GOAL" > "$TEMP_GOAL"
-    mv "$TEMP_GOAL" "$GOALFILE"
-    echo "[MAINTENANCE] goal.md updated."
+    [ -f "$GOALFILE" ] && cp "$GOALFILE" "${GOALFILE}.bak"
+    echo "$NEW_GOAL" > "${GOALFILE}.tmp"
+    mv "${GOALFILE}.tmp" "$GOALFILE"
+    echo "[MAINTENANCE] goal.md updated. HITL manual review recommended."
 else
     echo "[MAINTENANCE] Generation failed."
     exit 1

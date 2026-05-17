@@ -1,1 +1,0 @@
-PATCH: /data/data/com.termux/files/home/.hermes/skills/codex-developer/runcycle.sh - ensure mark_done is called after sed operations complete by adding explicit success verification and cleanup steps in the loop.
