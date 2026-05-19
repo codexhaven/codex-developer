@@ -1,83 +1,58 @@
-# Codex-Developer
+# Codex Developer v12.3
 
-> Words in. Working software out.
-
-A self-improving autonomous software factory that builds complete applications from natural language. Runs locally on your device. Uses free AI providers.
-
-## What It Does
-
-```
-"I need a program to rank students by exam scores"
-↓
-Working application delivered
-```
+Autonomous software factory for Termux/Android. Builds complete projects from natural language — researched, phase-planned, DNA-signed, and pushed to GitHub.
 
 ## Quick Start
 
 ```bash
-# One-command install
-curl -Ls https://raw.githubusercontent.com/USER/codex-developer/main/install.sh | bash
+# Clone the factory
+git clone https://github.com/codexhaven/codex-developer.git ~/.hermes/skills/codex-developer
 
-# Get a free API key
-# https://aistudio.google.com/app/apikey
+# Set up environment
+echo 'GITHUB_TOKEN=ghp_xxx' >> ~/.hermes/.env
+echo 'GITHUB_USER=codexhaven' >> ~/.hermes/.env
 
-# Build something
-~/.hermes/skills/codex-developer/listen.sh "Build a password generator CLI tool"
+# Build your first project
+~/.hermes/skills/codex-developer/listen.sh "Build a python calculator" ~/calculator
 ```
 
-## Features
+What It Builds
 
-· Natural Language Interface — Describe what you want, get working code
-· Three Build Modes — Creates new files, patches existing, or makes surgical edits
-· Self-Verifying — Every change is syntax-checked with automatic rollback on failure
-· Cross-Project Learning — Remembers patterns and lessons across all projects
-· Immutable Kernel — Protected core that watches for tampering and enables recovery
-· Self-Improving — Detects failure patterns and proposes fixes (with human approval)
-· 100% Local — Runs on your device. No code leaves your machine.
-· Free — Uses Google AI Studio (free tier) or GitHub Copilot
+Project Description GitHub
+Cod3x Self-improving AI with 50K training examples github.com/codexhaven/Cod3x
+Wilcom Online embroidery digitizing platform github.com/codexhaven/Wilcom
+Router Tool Colorful WiFi router control CLI github.com/codexhaven/tool
+Twin Tools Privacy cleanup + AI agent splash github.com/codexhaven/twin-tools
+Skill Hermes jailbreak/red-teaming skill github.com/codexhaven/skill
 
-## Requirements
+Architecture
 
-· Hermes Agent
-· Python 3.13+
+```
+listen.sh → recon.sh (research) → phases.json → approve
+    ↓
+runcycle.sh → phase gate → build files → strengthen → DNA inject
+    ↓
+github-push.sh → live on GitHub
+```
+
+Key Features
+
+· Recon Research: 2-round LLM research with gap analysis
+· Phase-Gated Builds: Complex projects built in ordered phases
+· Strengthen Pass: Every file hardened with cross-reference validation
+· DNA Fingerprint: # ctx: codexhaven embedded in every file
+· 64 Global Rules: Accumulated wisdom in every prompt
+· Auto GitHub: Every project pushed automatically
+· 7 Modes: NEW, GENERATE, EXISTING, REVIEW, CONTINUATION, CHECK, DEPLOY
+
+Requirements
+
+· Termux on Android
+· Hermes AI agent (pip install hermes-agent)
+· Python 3.10+
 · Git
-· A free API key from Google AI Studio
+· GitHub token (for auto-push)
 
-## Architecture
+License
 
-```
-listen.sh          ← Natural language interface
-runcycle.sh        ← Build engine (NEW | PATCH | SED)
-kernel.sh          ← Guardian (integrity, recovery, wisdom)
-modules/           ← Template detection, pattern matching, failure checking
-global-knowledge.jsonl  ← Cross-project memory
-```
-
-## Built With Codex
-
-Chat apps, weather apps, system monitors, agentic AI assistants, note-taking apps, password generators, blog engines, exam rankers — all from one-sentence descriptions.
-
-## Story
-
-This project started with a simple question: "Is free Claude Code safe to use?"
-
-Instead of trusting a leaked binary, the answer became building something transparent, local, and more capable. Codex-developer is the result — a self-improving autonomous developer that runs on free AI, on your device, under your control.
-
-No subscriptions. No surveillance. Just words in, software out.
-
-## Operational Modes (v12.2 Update)
-Your factory interprets requests using these modes to determine how to interact with your code:
-
-- **NEW**: Initializes a new project workspace.
-- **EXISTING**: Patches active files based on requests.
-- **ANALYZE**: Actively improves, refactors, or documents a specific file.
-- **REVIEW**: Project-wide read-only audit (Markdown reports).
-- **CHECK**: Diagnostics, import integrity checks, and self-tests.
-- **CONTINUATION**: Resumes pending build queues.
-- **DEPLOY**: Project-wide deployment prep and execution.
-
-## Adversarial Healing Pipeline
-If a build fails, the factory employs a 3-level healing process:
-1. **Literal Fix**: Syntax/import repairs.
-2. **Structural Pivot**: Re-aligns imports with the project map.
-3. **Queue Invalidation**: Prevents cascading failures.
+MIT — Built by Codex Developer, for Codex Developer.
