@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# CODES-DEVELOPER v12.3 — Hardened Build Engine
-# Pre-build intelligence + root cause healer + method adaptation
-# Phase Gate + Brain Memory + Full Context Reader + Multi-pass Strengthen
+# CODES-DEVELOPER v12.2 — Stress-tested — Build Engine
+# Modes: NEW | PATCH (SED fallback for large files)
+# Guardrails: Self-protection, path containment, syntax verification, rollback
+# Phase Gate: check_module_permission + advance_phase_if_complete
+# Brain Memory: project_brain.md injected into every prompt
 # =============================================================================
 
 SKILLDIR="${HOME}/.hermes/skills/codex-developer"
@@ -24,18 +26,22 @@ touch "$LOCKFILE" 2>/dev/null || { LOCKFILE="${HOME}/tmp-codex-developer.lock"; 
 acquire_lock() { exec 9>"$LOCKFILE"; flock -n 9 || { echo "[SKIP] Locked."; exit 0; }; }
 release_lock() { flock -u 9 2>/dev/null; rm -f "$LOCKFILE" 2>/dev/null; }
 
+# Improved Logger for colored output
 log() {
-  local level="INFO" msg="$*" color=""
+  local level="INFO"
+  local msg="$*"
+  local color=""
   case "$msg" in
     *FAIL*|*ERROR*) level="ERROR"; color="\033[1;31m" ;;
     *SUCCESS*|*BUILT*|*PASS*) level="SUCCESS"; color="\033[1;32m" ;;
     *WARN*) level="WARN"; color="\033[1;33m" ;;
     *CYCLE*|*PLANNING*) level="DEBUG"; color="\033[1;36m" ;;
+    *REQUEST*|*MODE*) level="INFO"; color="\033[1;35m" ;;
   esac
   echo -e "${color}[$level]\033[0m $msg"
 }
 
-# --- Modules ---
+# --- Advanced Modules ---
 get_project_context() {
   python3 "${SKILLDIR}/modules/map_project.py" full 2>/dev/null || python3 "${SKILLDIR}/modules/map_project.py" tree 2>/dev/null || echo "Map generation failed."
 }
@@ -66,6 +72,7 @@ parse_entry() {
   [[ "$entry" =~ ^(NEW|PATCH):[[:space:]]*$ ]] && { echo "MODE=SKIP FILE= DESC="; return; }
   local clean_entry="${entry#NEW: }"
   clean_entry="${clean_entry#PATCH: }"
+
   if [[ "$entry" =~ ^PATCH:[[:space:]]+([^[:space:]].*)[[:space:]]-[[:space:]](.*) ]]; then
     echo "MODE=PATCH FILE=${BASH_REMATCH[1]} DESC=${BASH_REMATCH[2]}"
   elif [[ "$entry" =~ ^NEW:[[:space:]]+(.+) ]]; then
@@ -129,6 +136,7 @@ self_protect() {
   local filepath="$1"
   local resolved=$(readlink -f "$REPODIR/$filepath" 2>/dev/null || echo "$REPODIR/$filepath")
   if [[ "$resolved" == "$SKILLDIR"* ]]; then
+    echo ""
     echo "=============================================="
     echo "  SELF-PROTECTION: Cannot modify codex source"
     echo "  File: $filepath"
@@ -139,11 +147,12 @@ self_protect() {
 }
 
 # =============================================================================
-# BUILD FILE — Pre-build intelligence + method adaptation
+# BUILD FILE
 # =============================================================================
 build_file() {
   local filepath="$1" goal="$2" built="$3" mode="${4:-NEW}" desc="${5:-}" attempt=0
 
+  # Pre-build intelligence: gather full context
   local full_context=""
   if [ -f "${SKILLDIR}/modules/map_project.py" ]; then
     full_context=$(python3 "${SKILLDIR}/modules/map_project.py" context "$filepath" 2>/dev/null || echo "")
@@ -168,7 +177,7 @@ build_file() {
       [ -n "$current_file_content" ] && prompt+="## CURRENT FILE: $filepath"$'\n''```'$'\n'"$current_file_content"$'\n''```'$'\n'
       prompt+="## REQUESTED CHANGE: $desc"$'\n'"## INSTRUCTIONS: Make ONLY the change described. Keep everything else IDENTICAL. Use ONLY exports listed above. Output: FILE: $filepath"$'\n\n'"$built"
     else
-      prompt="## MODE: CREATE NEW FILE"$'\n'"## PROJECT GOAL: $goal"$'\n'"## FULL PROJECT CONTEXT (exports available):"$'\n'"$full_context"$'\n'"## TARGET FILE: $filepath"$'\n'"## INSTRUCTIONS: Build complete file. Use EXACT export names from context. Output: FILE: $filepath"$'\n\n'"$built"
+      prompt="## MODE: CREATE NEW FILE"$'\n'"## PROJECT GOAL: $goal"$'\n'"## FULL PROJECT CONTEXT (exports available):"$'\n'"$full_context"$'\n'"## TARGET FILE: $filepath"$'\n'"## INSTRUCTIONS: Build complete file. Use EXACT export names. Output: FILE: $filepath"$'\n\n'"$built"
     fi
 
     [ -f "$REPODIR/.codex/project_brain.md" ] && prompt="## MASTER BRAIN CONTEXT"$'\n'"$(cat "$REPODIR/.codex/project_brain.md")"$'\n\n'"$prompt"
@@ -194,42 +203,7 @@ build_file() {
 }
 
 # =============================================================================
-# APPLY FILE TO DISK
-# =============================================================================
-apply_file() {
-  local output="$1"
-  local filepath="" content="" found_first=false
-
-  while IFS= read -r line; do
-    if [[ "$line" =~ ^FILE:[[:space:]]+(.*) ]] && [ "$found_first" = false ]; then
-      filepath="${BASH_REMATCH[1]}"; found_first=true
-    elif [ "$found_first" = true ]; then
-      content+="$line"$'\n'
-    fi
-  done <<< "$output"
-
-  content=$(echo "$content" | sed "/^\`\`\`/d")
-  [ -n "$filepath" ] && [ -n "$content" ] || return 1
-
-  filepath="${filepath#$REPODIR/}"
-  filepath="${filepath#/}"
-
-  if ! self_protect "$filepath"; then return 1; fi
-
-  local fp="$REPODIR/$filepath"
-  local resolved=$(readlink -f "$fp" 2>/dev/null || echo "$fp")
-  if [[ "$resolved" != "$REPODIR"* ]]; then
-    log "SECURITY: Blocked write outside project: $resolved"
-    return 1
-  fi
-
-  mkdir -p "$(dirname "$fp")"
-  printf '%s' "$content" > "$fp"
-  echo "$filepath"
-  return 0
-}
-
-# =============================================================================
+# APPLY FILE TO DISK# =============================================================================
 # VERIFY
 # =============================================================================
 verify_file() {
@@ -280,13 +254,23 @@ commit_all() {
 
 generate_queue() {
   local goal="$1"
-  log "PLANNING: Generating build order..."
+  log "PLANNING: Generating build order with directory awareness..."
   local subdirs=$(find "$REPODIR" -maxdepth 2 -type d -not -path "*/.*" | grep -v "$REPODIR" | sed "s|$REPODIR/||")
-  local prompt="## GOAL"$'\n'"$goal"$'\n\n'"## EXISTING DIRECTORIES"$'\n'"$(echo "$subdirs" | sed 's/^/- /')"$'\n\n'"## INSTRUCTIONS: List files in dependency order. Output ONLY file paths. No markdown."
+
+  local prompt="## GOAL
+$goal
+
+## EXISTING DIRECTORIES
+$(echo "$subdirs" | sed 's/^/- /')
+
+## INSTRUCTIONS
+List files to build in dependency order. Output ONLY file paths. No markdown."
+
   local output
   output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
   [ -z "$output" ] && { log "FAIL: No plan."; return 1; }
   echo "$output" | grep -E '\.(py|js|ts|tsx|jsx|html|css|md|txt|json|yml|yaml|sh|toml|example|gitignore)' > "$QUEUEFILE" || true
+
   local count=$(wc -l < "$QUEUEFILE" 2>/dev/null || echo 0)
   log "PLANNED: $count files"
   [ "$count" -gt 0 ] && cat "$QUEUEFILE"
@@ -296,6 +280,7 @@ generate_queue() {
 # MAIN
 # =============================================================================
 main() {
+  # --- SANDBOX INJECTION HOOK ---
   [ -d "${SKILLDIR}/sandbox" ] && for s in "${SKILLDIR}/sandbox/"*.sh; do source "$s"; done
 
   export REPODIR
@@ -303,11 +288,13 @@ main() {
   trap release_lock EXIT
   ensure_files
 
-  local goal=$(read_goal)
+  local goal
+  goal=$(read_goal)
   export goal
 
   FAILURE_COUNT=$(python3 -c "import json; print(json.load(open('$STATEFILE')).get('failure_count', 0))" 2>/dev/null || echo 0)
 
+  # Run before-build plugins
   bash "${SKILLDIR}/modules/vibestack/apply.sh" || true
   bash "${SKILLDIR}/modules/flaskstack/apply.sh" 2>/dev/null || true
   bash "${SKILLDIR}/modules/vanillastack/apply.sh" 2>/dev/null || true
@@ -339,20 +326,23 @@ main() {
     local parsed=$(parse_entry "$entry")
     local mode=$(echo "$parsed" | sed "s/MODE=//;s/ .*//")
     local current=$(echo "$parsed" | sed "s/.*FILE=//;s/ .*//")
-    current="${current#NEW: }"; current="${current#NEW:}"
-    current="${current#PATCH: }"; current="${current#PATCH:}"
+    current="${current#NEW: }"
+    current="${current#NEW:}"
+    current="${current#PATCH: }"
+    current="${current#PATCH:}"
     current="${current#/}"
     local desc=$(echo "$parsed" | sed -E 's/.*DESC=(.*)/\1/')
+
     [ "$mode" = "SKIP" ] && continue
 
-    # Phase Gate
+    # --- PHASE GATE ---
     if type check_module_permission >/dev/null 2>&1; then
-      if ! check_module_permission "$current" "core-engine"; then
-        log "PHASE-GATE: Deferring $current"
-        echo "$entry" >> "$DONEFILE"
-        echo "$entry" >> "$QUEUEFILE"
-        continue
-      fi
+        if ! check_module_permission "$current" "core-engine"; then
+             log "PHASE-GATE: Deferring $current (out of active phase)"
+             echo "$entry" >> "$DONEFILE"
+             echo "$entry" >> "$QUEUEFILE"
+             continue
+        fi
     fi
 
     local cycle=$(python3 -c "import json; print(json.load(open('$STATEFILE')).get('cycle',0)+1)" 2>/dev/null || echo "1")
@@ -365,11 +355,33 @@ main() {
 
     local prompt
     if [ "$mode" = "PATCH" ]; then
-      prompt="## MODE: PATCH EXISTING FILE"$'\n'"## PROJECT GOAL: $goal"$'\n'"## GLOBAL WISDOM (MANDATORY):"$'\n'"$global_wisdom"$'\n'"## PROJECT MAP: $context_map"$'\n'"$failure_warnings"$'\n'"## TARGET FILE: $current"$'\n'"## REQUESTED CHANGE: $desc"$'\n'"## INSTRUCTIONS: Make ONLY the change. Keep everything else IDENTICAL. Output: FILE: $current"$'\n\n'"$built"
+      prompt="## MODE: PATCH EXISTING FILE
+## PROJECT GOAL: $goal
+## GLOBAL WISDOM (MANDATORY):
+$global_wisdom
+## PROJECT MAP: $context_map
+$failure_warnings
+## TARGET FILE: $current
+## REQUESTED CHANGE: $desc
+## INSTRUCTIONS: Make ONLY the change described above. Keep everything else IDENTICAL. Read the CURRENT FILE first. Preserve ALL existing imports and functionality.
+## Output format: FILE: $current followed by the COMPLETE modified file contents.
+
+$built"
     else
-      prompt="## MODE: CREATE NEW FILE"$'\n'"## PROJECT GOAL: $goal"$'\n'"## GLOBAL WISDOM (MANDATORY):"$'\n'"$global_wisdom"$'\n'"## PROJECT MAP: $context_map"$'\n'"$failure_warnings"$'\n'"## TARGET FILE: $current"$'\n'"## INSTRUCTIONS: Build complete file. No TODOs. Output: FILE: $current"$'\n\n'"$built"
+      prompt="## MODE: CREATE NEW FILE
+## PROJECT GOAL: $goal
+## GLOBAL WISDOM (MANDATORY):
+$global_wisdom
+## PROJECT MAP: $context_map
+$failure_warnings
+## TARGET FILE: $current
+## INSTRUCTIONS: Build this COMPLETE file. No TODOs. No placeholders. Working code.
+## Output format: FILE: $current followed by complete file contents.
+
+$built"
     fi
 
+    # Inject Recursive Brain
     [ -f "$REPODIR/.codex/project_brain.md" ] && prompt="## MASTER BRAIN CONTEXT"$'\n'"$(cat "$REPODIR/.codex/project_brain.md")"$'\n\n'"$prompt"
 
     local output
@@ -393,45 +405,56 @@ main() {
       log "FAIL: Could not build $current"
       FAILURE_COUNT=$((FAILURE_COUNT + 1))
       if [ "$FAILURE_COUNT" -gt 3 ]; then
-        log "[ERROR] Threshold reached. Engaging HEALER."
+        log "[ERROR] Threshold reached (Generation Failure). Engaging HEALER."
         bash "${SKILLDIR}/modules/healer.sh"
         FAILURE_COUNT=0
       fi
       continue
     fi
 
+    local applied=""
     local enforced=$(python3 "${SKILLDIR}/modules/enforce_path.py" "$current" "$REPODIR" 2>/dev/null || echo "$current")
     current="$enforced"
 
-    local applied=$(apply_file "$output") || true
+    applied=$(apply_file "$output") || true
     applied="${applied#/}"
     if [ -z "$applied" ]; then
       log "FAIL: Could not apply $current"
       continue
     fi
 
-    # Structural Healing Pipeline
+    # --- Structural Healing Pipeline ---
     if ! verify_file "$applied"; then
       log "Syntax failure in $applied. Initiating Adversarial Healing..."
       local err_log=$(cat "${REPODIR}/.codex/last_error.log" 2>/dev/null || echo "Unknown syntax error")
-      local fix_prompt="## MODE: FIX SYNTAX ERROR"$'\n'"## TARGET FILE: $applied"$'\n'"## ERROR: $err_log"$'\n'"## INSTRUCTIONS: Fix the syntax error. Do not change logic."
+      local fix_prompt="## MODE: FIX SYNTAX ERROR
+## TARGET FILE: $applied
+## ERROR: $err_log
+## INSTRUCTIONS: Fix the syntax error. Do not change logic."
       output=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
+
       if ! echo "$output" | grep -q "FILE:"; then
-        log "Level 1 fix failed. Pivoting to Structural Healing..."
-        local map=$(python3 "${SKILLDIR}/modules/map_project.py")
-        fix_prompt="## MODE: STRUCTURAL HEALING"$'\n'"## TARGET FILE: $applied"$'\n'"## PROJECT MAP: $map"$'\n'"## ERROR: $err_log"$'\n'"## INSTRUCTIONS: Re-align imports with the Project Map above."
-        output=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
+         log "Level 1 fix failed. Pivoting to Structural Healing..."
+         local map=$(python3 "${SKILLDIR}/modules/map_project.py")
+         fix_prompt="## MODE: STRUCTURAL HEALING
+## TARGET FILE: $applied
+## PROJECT MAP: $map
+## ERROR: $err_log
+## INSTRUCTIONS: Re-align imports with the Project Map above."
+         output=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
       fi
+
       if echo "$output" | grep -q "FILE:"; then
         apply_file "$output"
       else
-        log "CRITICAL: Structural Healing failed."
+        log "CRITICAL: Structural Healing failed. Invaliding downstream dependencies."
         echo "$current" >> "$DONEFILE"
         continue
       fi
     fi
     log "VERIFY: PASS"
 
+    # Functional Smoke Test
     bash "${SKILLDIR}/modules/smoke-tester.sh" "$REPODIR" || {
       log "SMOKE FAIL"
       FAILURE_COUNT=$((FAILURE_COUNT + 1))
@@ -445,12 +468,16 @@ main() {
       revert_file "$applied"; continue;
     }
 
+    # Dynamic Dependency Queueing
     python3 "${SKILLDIR}/modules/scan_deps.py" "$REPODIR/$applied" "$REPODIR" "$QUEUEFILE" 2>/dev/null || true
+
     run_plugins "after-verify" 2>/dev/null || true
+
     bash "${SKILLDIR}/modules/failure-check.sh" check "$REPODIR/$applied" 2>/dev/null || true
 
     local lines=$(wc -l < "$REPODIR/$applied" 2>/dev/null || echo 0)
 
+    # Atomic Journaling
     local tmp_state="$STATEFILE.tmp"
     python3 -c "
 import json, os
@@ -470,14 +497,16 @@ os.replace('$tmp_state', '$STATEFILE')
 
     commit_all "$applied"
 
-    # Strengthen pass
+    # Post-generation strengthening pass
     if type strengthen_file >/dev/null 2>&1; then
       strengthen_file "$applied"
       cd "$REPODIR" && git add -A && git commit -m "[Strengthen] $applied" 2>/dev/null || true
     fi
 
+    # Global Memory Consolidation
     python3 "${SKILLDIR}/lesson-analyzer.py" --consolidate "$REPODIR" 2>/dev/null || true
 
+    # Check if current phase is complete -> advance to next
     if type advance_phase_if_complete >/dev/null 2>&1; then
       advance_phase_if_complete
     fi
@@ -489,8 +518,9 @@ os.replace('$tmp_state', '$STATEFILE')
     log "Running tests..."
     bash "${SKILLDIR}/modules/self-test.sh" "$REPODIR" 2>&1 | while read -r l; do [ -n "$l" ] && log "TEST: $l"; done
   fi
-
+  # Post-build structure audit: flatten if over-nested
   bash "${SKILLDIR}/sandbox/strengthen.sh" --flatten 2>/dev/null || true
+
   bash "${SKILLDIR}/modules/symbol-check.sh" "$REPODIR" 2>&1 | while read -r l; do [ -n "$l" ] && log "SYMBOL: $l"; done
 }
 

@@ -8,7 +8,7 @@ set -euo pipefail
 SKILLDIR="${HOME}/.hermes/skills/codex-developer"
 GOALFILE="${REPODIR}/.codex/goal.md"
 
-echo "PLUGIN: vibestack — Checking project compatibility..."
+: # silent
 
 # --- 1. DETECT if this is a VibeStack-compatible project ---
 # VibeStack handles: Next.js, React, Tailwind, Shadcn, Supabase, Clerk, Vercel

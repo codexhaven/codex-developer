@@ -17,11 +17,10 @@ MODE=""
 # =============================================================================
 understand() {
   local request="$1" project_dir="$2"
-  echo ""
-  echo "=============================================="
-  echo "  CODES-DEVELOPER v12.2 — Stress-tested"
-  echo "=============================================="
-  echo "Request: $request"
+  echo -e "\033[1;36m==============================================\033[0m"
+  echo -e "\033[1;32m  CODES-DEVELOPER v12.2 — Stress-tested\033[0m"
+  echo -e "\033[1;36m==============================================\033[0m"
+  echo -e "\033[1;33mRequest:\033[0m $request"
   echo ""
 
   local local_path=$(echo "$request" | grep -oE "(~/\S+|/data/\S+)" | head -1)
@@ -40,7 +39,9 @@ understand() {
 
   if echo "$request" | grep -qiE "deploy|ship|publish|go live|launch|push to production"; then
     MODE="DEPLOY"
-  elif echo "$request" | grep -qiE "check|scan|audit|diagnose|inspect|verify"; then
+  elif echo "$request" | grep -qiE "^generate|^create.*tool|^make.*tool|build.*cli tool|^Generate"; then
+    MODE="GENERATE"
+  elif echo "$request" | grep -qiE "^(check|scan|audit|diagnose|inspect|verify)( |$)"; then
     MODE="CHECK"
   elif echo "$request" | grep -qiE "(^review|security review|bug review|code review|audit|scan for|analyze this)"; then
     MODE="REVIEW"
@@ -51,7 +52,7 @@ understand() {
   else
     MODE="EXISTING"
   fi
-  echo "Mode: $MODE"
+  echo -e "\033[1;35mMode:\033[0m $MODE"
   echo ""
   export MODE
 }
@@ -298,6 +299,7 @@ main() {
 
   case "$MODE" in
     NEW) mode_new ;;
+    GENERATE) mode_new ;;
     EXISTING) mode_existing ;;
     DEPLOY) mode_deploy ;;
     REVIEW) mode_review ;;
