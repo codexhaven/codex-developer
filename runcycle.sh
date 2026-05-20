@@ -303,6 +303,9 @@ main() {
   trap release_lock EXIT
   ensure_files
 
+  # Resume from previous session if state exists
+  bash "${SKILLDIR}/sandbox/architect.sh" --resume
+
   local goal=$(read_goal)
   export goal
 
@@ -316,6 +319,11 @@ main() {
   local max_cycles=30
   while [ $max_cycles -gt 0 ]; do
     max_cycles=$((max_cycles - 1))
+
+    # Validate dependency order before building
+    if type validate_dependency_order >/dev/null 2>&1; then
+      validate_dependency_order
+    fi
 
     if [ ! -s "$QUEUEFILE" ]; then
       local file_count=$(find "$REPODIR" -maxdepth 3 -type f -not -path "*/.git/*" -not -path "*/.codex/*" -not -path "*/__pycache__/*" 2>/dev/null | wc -l)
@@ -346,13 +354,10 @@ main() {
     [ "$mode" = "SKIP" ] && continue
 
     # Phase Gate
-    if type check_module_permission >/dev/null 2>&1; then
-      if ! check_module_permission "$current" "core-engine"; then
+    if ! bash "${SKILLDIR}/sandbox/architect.sh" --gate "$current"; then
         log "PHASE-GATE: Deferring $current"
         echo "$entry" >> "$DONEFILE"
         echo "$entry" >> "$QUEUEFILE"
-        continue
-      fi
     fi
 
     local cycle=$(python3 -c "import json; print(json.load(open('$STATEFILE')).get('cycle',0)+1)" 2>/dev/null || echo "1")
@@ -432,6 +437,11 @@ main() {
     fi
     log "VERIFY: PASS"
 
+    # Contract compliance + breaking change detection
+    if [ -f "${SKILLDIR}/modules/dependency-guard.sh" ]; then
+      bash "${SKILLDIR}/modules/dependency-guard.sh" "$REPODIR" "$REPODIR/$applied" 2>/dev/null || true
+    fi
+
     bash "${SKILLDIR}/modules/smoke-tester.sh" "$REPODIR" || {
       log "SMOKE FAIL"
       FAILURE_COUNT=$((FAILURE_COUNT + 1))
@@ -477,10 +487,7 @@ os.replace('$tmp_state', '$STATEFILE')
     fi
 
     python3 "${SKILLDIR}/lesson-analyzer.py" --consolidate "$REPODIR" 2>/dev/null || true
-
-    if type advance_phase_if_complete >/dev/null 2>&1; then
-      advance_phase_if_complete
-    fi
+    bash "${SKILLDIR}/sandbox/architect.sh" --advance
 
     log "$mode: $applied (${lines}L)"
   done

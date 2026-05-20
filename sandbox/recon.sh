@@ -1,25 +1,55 @@
 #!/bin/bash
-# sandbox/recon.sh - Iterative research + phase planning
-# Round 1: Research → Gap analysis → Round 2: Fill gaps → Generate phases
+# sandbox/recon.sh v3 — Deep research with technology selection + interface specificity
 
 recon_main() {
   REPODIR="${1:-${REPODIR:-${CODEX_REPO:-}}}"
   GOALFILE="${REPODIR}/.codex/goal.md"
   RESEARCHFILE="${REPODIR}/.codex/research.md"
+  CAPFILE="${REPODIR}/.codex/capabilities.json"
   PHASESFILE="${REPODIR}/.codex/phases.json"
   BRAINFILE="${REPODIR}/.codex/project_brain.md"
   LOGFILE="${REPODIR}/.codex/research.log"
 
   [ -f "$GOALFILE" ] || { echo "[RECON] No goal.md. Skipping." >&2; return 0; }
   GOAL=$(cat "$GOALFILE")
+  
+  # Load existing capabilities
+  CAP_CONTEXT=""
+  [ -f "$CAPFILE" ] && CAP_CONTEXT=$(python3 -c "import json; caps=json.load(open('$CAPFILE')); print('Existing capabilities:', json.dumps({k: list(v.keys()) for k,v in caps.items()}))" 2>/dev/null)
+
   echo "[RECON] Researching: $GOAL" >&2
 
-  # --- Round 1: Initial research ---
+  # --- Round 1: Deep technology research ---
   set +euo pipefail 2>/dev/null
   hermes chat -q \
-    "Research this project thoroughly. Include: specific technologies, real API endpoints if applicable, auth mechanisms, file formats, platform constraints (Termux/Android), and concrete implementation details. Output a technical summary.
+"Research this project for Termux/Android. Provide SPECIFIC technology choices with exact package names, module names, and function signatures.
 
-Project: $GOAL" \
+## PROJECT
+$GOAL
+
+## PLATFORM CONSTRAINTS
+- Termux on Android (ARM64)
+- No GPU available
+- No Docker available
+- Python 3.10+ available
+- Node.js available
+- SQLite available (no PostgreSQL/MySQL)
+- Root access: likely unavailable
+- Storage: $HOME is /data/data/com.termux/files/home
+
+## EXISTING CAPABILITIES
+$CAP_CONTEXT
+
+## OUTPUT REQUIREMENTS
+Provide:
+1. TECHNOLOGY STACK: exact packages with versions (e.g., 'bcrypt==4.1.2', not 'a hashing library')
+2. INTERFACE SIGNATURES: actual function signatures with parameter names and types
+   Example: 'def hash_password(plaintext: str) -> bytes' not 'password hashing function'
+3. FILE STRUCTURE: exactly which files, their paths, and why
+4. DATA FLOW: how data moves between modules
+5. ERROR HANDLING: specific error types and how they propagate
+
+Be specific. No generic advice. Real code-level detail." \
     --yolo --quiet > "$RESEARCHFILE" 2> "$LOGFILE"
   local R1_EXIT=$?
   set -euo pipefail
@@ -28,13 +58,19 @@ Project: $GOAL" \
     echo "[RECON] Research failed." >&2; return 0
   fi
 
-  # --- Gap analysis: what's missing? ---
   local RESEARCH=$(cat "$RESEARCHFILE")
+
+  # --- Gap analysis ---
   echo "[RECON] Analyzing gaps..." >&2
-  
   set +euo pipefail 2>/dev/null
   local gaps=$(hermes chat -q \
-    "What critical details are MISSING from this research? What must be known before building? List 3-5 specific questions that need answers. Be concise.
+"Review this research. What critical implementation details are MISSING?
+List 3-5 specific gaps. Focus on:
+- Missing function signatures
+- Unspecified error handling
+- Missing import paths
+- Platform-specific issues not addressed
+- Security considerations not covered
 
 Research:
 $RESEARCH
@@ -43,14 +79,14 @@ Project: $GOAL" \
     --yolo --quiet 2>> "$LOGFILE")
   set -euo pipefail
 
-  # --- Round 2: Fill the gaps ---
-  if [ -n "$gaps" ] && [ "$gaps" != "None." ]; then
+  # --- Round 2: Fill gaps ---
+  if [ -n "$gaps" ] && [ "$gaps" != "None." ] && [ "$gaps" != "" ]; then
     echo "[RECON] Round 2: filling gaps..." >&2
     set +euo pipefail 2>/dev/null
     hermes chat -q \
-      "Answer these questions with specific, concrete details. Include real endpoints, real auth flows, real file paths.
+"Fill these specific gaps with concrete implementation details. Provide exact code-level answers.
 
-Questions:
+GAPS:
 $gaps
 
 Original research:
@@ -64,32 +100,35 @@ Project: $GOAL" \
   RESEARCH=$(cat "$RESEARCHFILE")
   echo "[RECON] Research complete. Generating phase plan..." >&2
 
-  # --- Determine project complexity ---
-  local file_count_estimate=$(echo "$GOAL" | grep -oE '\b(file|module|script|component)\b' | wc -l)
-  local structure_hint="SIMPLE"
-  # If the goal mentions many components, use package structure
-  if echo "$GOAL" | grep -qiE "web|saas|full.stack|platform|api.*database|multiple.*module|complex|system"; then
-    structure_hint="PACKAGE"
-  fi
+  # --- Complexity detection ---
+  local file_count=$(echo "$RESEARCH" | grep -oE '\b[a-zA-Z_/-]+\.(py|js|ts|tsx|sh|json|yaml|toml)\b' | sort -u | wc -l)
+  local structure="SIMPLE"
+  [ "$file_count" -gt 6 ] && structure="PACKAGE"
+  [ "$file_count" -gt 15 ] && structure="COMPLEX"
+  echo "[RECON] Detected: $file_count files → $structure structure" >&2
 
   # --- Generate phases ---
   set +euo pipefail 2>/dev/null
   hermes chat -q \
-    "Create a development phase plan as JSON with 'phases' array. Each phase: 'id', 'name', 'description', 'files' (array).
+"Create a development phase plan as JSON with 'phases' array. Each phase: 'id', 'name', 'description', 'files' (array of exact file paths).
 
-CRITICAL RULES:
-- Project complexity: $structure_hint
-- If SIMPLE (≤5 files total): put ALL files at project root. NO subdirectories like src/ or lib/. Just flat files.
-- If PACKAGE: use standard src/ structure.
-- Files must be PRACTICAL, not theoretical. No __init__.py unless truly needed.
-- Total files across ALL phases should match the project scope.
+## CRITICAL RULES
+- Structure type: $structure
+- SIMPLE (≤6 files): ALL files at project root. No src/, no lib/, no subdirectories.
+- PACKAGE (7-15 files): Use src/ for modules, tests/ for tests.
+- COMPLEX (16+ files): Full package structure with submodules.
+- Files MUST use exact paths from the research. No invented files.
+- No __init__.py unless the structure is COMPLEX.
+- No pyproject.toml or setup.py unless the project is a library.
+- Every file must appear in the research. No extras.
 
-Research:
+## RESEARCH
 $RESEARCH
 
-Project: $GOAL
+## PROJECT
+$GOAL
 
-Output ONLY valid JSON, no markdown fences." \
+Output ONLY valid JSON. No markdown." \
     --yolo --quiet > "$PHASESFILE" 2>> "$LOGFILE"
   local P_EXIT=$?
   set -euo pipefail
@@ -104,7 +143,8 @@ Output ONLY valid JSON, no markdown fences." \
 import json
 data = json.load(open('$PHASESFILE'))
 for i, p in enumerate(data.get('phases', [])):
-    print(f'  Phase {i+1}: {p.get(\"name\", p.get(\"id\", \"unnamed\"))} ({len(p.get(\"files\", []))} files)')
+    files = p.get('files', [])
+    print(f'  Phase {i+1}: {p.get(\"name\", p.get(\"id\", \"unnamed\"))} ({len(files)} files)')
 " >&2
   else
     echo "[RECON] phases.json is invalid JSON." >&2
@@ -112,9 +152,9 @@ for i, p in enumerate(data.get('phases', [])):
 
   # --- Project brain ---
   {
-    echo "# Project Brain"
+    echo "# Project Brain — $(date +%Y-%m-%d)"
     echo ""
-    echo "## Research (2 rounds)"
+    echo "## Research (2 rounds with gap analysis)"
     cat "$RESEARCHFILE"
     echo ""
     echo "## Phase Plan"

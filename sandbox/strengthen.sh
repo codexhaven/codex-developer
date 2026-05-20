@@ -15,6 +15,28 @@ strengthen_file() {
 
   log "STRENGTHEN: Reviewing $filepath..."
 
+  # Contract compliance check
+  if [ -f "${REPODIR}/.codex/contract.json" ]; then
+    log "  Checking contract compliance..."
+    python3 -c "
+import json, os, ast
+contract = json.load(open('${REPODIR}/.codex/contract.json'))
+target = '$filepath'
+if target in contract.get('modules', {}):
+    mod = contract['modules'][target]
+    exports = mod.get('exports', [])
+    if os.path.exists('${REPODIR}/' + target):
+        tree = ast.parse(open('${REPODIR}/' + target).read())
+        found = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+                found.add(node.name)
+        for exp in exports:
+            if exp['name'] not in found:
+                print(f'  CONTRACT VIOLATION: {exp["type"]} {exp["name"]} required but missing')
+" 2>/dev/null || true
+  fi
+
   local brain_context=""
   [ -f "$brain" ] && brain_context=$(head -100 "$brain" 2>/dev/null)
 
@@ -117,7 +139,13 @@ Output format: FILE: $filepath followed by COMPLETE strengthened file contents."
     local old_lines=$(wc -l < "$fp" 2>/dev/null || echo 0)
     local new_lines=$(echo "$content" | wc -l)
     
-    if [ "$new_lines" -gt "$old_lines" ]; then
+    # Quality gate: only accept if improvement is meaningful (>5% growth or import fixes)
+    local line_gain=$((new_lines - old_lines))
+    local gain_pct=$((line_gain * 100 / (old_lines + 1)))
+    local has_xref_fix=false
+    [ -n "$xref_issues" ] && ! echo "$content" | grep -qF "$xref_issues" && has_xref_fix=true
+
+    if [ "$line_gain" -gt 0 ] && ( [ "$gain_pct" -ge 5 ] || [ "$has_xref_fix" = true ] ); then
       printf '%s' "$content" > "$fp"
       log "STRENGTHEN: $filepath $old_lines→$new_lines lines (+$((new_lines - old_lines)))"
       
@@ -127,7 +155,7 @@ Output format: FILE: $filepath followed by COMPLETE strengthened file contents."
         sh) bash -n "$fp" 2>/dev/null && log "  Re-verify: PASS" || log "  Re-verify: FAIL";;
       esac
     else
-      log "STRENGTHEN: $filepath unchanged (no meaningful additions)"
+      log "STRENGTHEN: $filepath unchanged (gain: +${line_gain}L / ${gain_pct}% — below threshold)"
     fi
   fi
 }

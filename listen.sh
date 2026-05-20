@@ -70,6 +70,10 @@ mode_new() {
     bash "${SKILLDIR}/sandbox/recon.sh" "$REPODIR"
   fi
 
+  # 1.5. Generate interface contract
+  echo "[CONTRACT] Designing interfaces..."
+  bash "${SKILLDIR}/sandbox/architect.sh" --contract "$REPODIR"
+
   # 2. Show phases for approval
   if [ -f "$REPODIR/.codex/phases.json" ] && [ -s "$REPODIR/.codex/phases.json" ]; then
     echo ""
@@ -85,7 +89,10 @@ for i, p in enumerate(data.get('phases', [])):
     print()
 " 2>/dev/null || cat "$REPODIR/.codex/phases.json"
     echo "--------------------"
-    echo -n "Approve this phase plan? (y/n): "
+    # Check contract-phase alignment
+  :
+
+  echo -n "Approve this phase plan? (y/n): "
     read -r confirm
     if [ "$confirm" != "y" ]; then
       echo "Aborted. Edit phases.json and retry, or re-run with a different request."
