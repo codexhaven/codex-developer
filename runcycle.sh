@@ -491,6 +491,9 @@ os.replace('$tmp_state', '$STATEFILE')
   fi
 
   bash "${SKILLDIR}/sandbox/strengthen.sh" --flatten 2>/dev/null || true
+  # Scan project capabilities
+  bash "${SKILLDIR}/modules/capability-scanner.sh" "$REPODIR" 2>/dev/null || true
+
   bash "${SKILLDIR}/modules/symbol-check.sh" "$REPODIR" 2>&1 | while read -r l; do [ -n "$l" ] && log "SYMBOL: $l"; done
 }
 

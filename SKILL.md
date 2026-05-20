@@ -84,3 +84,5 @@ If factory drift or loop failure occurs:
 1. Clear queue: `rm ~/project/.codex/build-queue.txt ~/project/.codex/build-done.txt`
 2. Clear lock: `rm -f /tmp/codex-developer.lock ~/tmp-codex-developer.lock`
 3. Retry: `listen.sh "Continue" ~/project`
+
+- License: Project includes a LICENSE file in the root.

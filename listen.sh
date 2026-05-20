@@ -157,6 +157,22 @@ for phase in data.get('phases', []):
 # =============================================================================
 mode_existing() {
   echo "Analyzing existing project..."
+  
+  # Check capabilities first
+  if [ -f "$REPODIR/.codex/capabilities.json" ]; then
+    echo "Project capabilities found."
+    python3 -c "
+import json, sys
+caps = json.load(open('$REPODIR/.codex/capabilities.json'))
+# Check if request matches a capability
+request = open('$REPODIR/.codex/goal.md').read().lower() if __import__('os').path.exists('$REPODIR/.codex/goal.md') else ''
+for cat in ['generators', 'scripts']:
+    for name, info in caps.get(cat, {}).items():
+        if any(word in request for word in name.replace('.py','').replace('_',' ').split()):
+            print(f'CAPABILITY MATCH: {info["run"]}')
+            print(f'RUN_THIS={info["run"]}')
+" 2>/dev/null
+  fi
   mkdir -p "$REPODIR/.codex"
   > "$REPODIR/.codex/build-queue.txt"
 
@@ -283,7 +299,7 @@ run_build_loop() {
   echo ""
   echo "Done. Location: $REPODIR"
   if [ -f "${SKILLDIR}/modules/github-push.sh" ]; then
-    bash "${SKILLDIR}/modules/github-push.sh" "$REPODIR" 2>/dev/null || true
+    bash "${SKILLDIR}/modules/github-push.sh" "$REPODIR"
   fi
   echo "Full log: $REPODIR/.codex/build.log"
 }
@@ -296,6 +312,11 @@ main() {
   REPODIR="${2:-$HOME/projects}"
   [ -z "$REQUEST" ] && { echo "Usage: listen.sh 'request' [directory]"; exit 1; }
   understand "$REQUEST" "$REPODIR"
+
+  # Check if request matches a known project capability
+  if [ -f "$REPODIR/.codex/capabilities.json" ]; then
+    bash "${SKILLDIR}/modules/capability-runner.sh" "$REPODIR" "$REQUEST" && exit 0
+  fi
 
   case "$MODE" in
     NEW) mode_new ;;
