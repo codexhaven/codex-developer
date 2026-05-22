@@ -37,10 +37,10 @@ understand() {
 
   local code_files=$(find "$REPODIR" -maxdepth 4 -type f \( -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.html" -o -name "*.css" -o -name "*.sh" \) -not -path "*/.git/*" -not -path "*/.codex/*" -not -path "*/__pycache__/*" -not -path "*/node_modules/*" 2>/dev/null | wc -l)
 
-  if echo "$request" | grep -qiE "deploy|ship|publish|go live|launch|push to production"; then
-    MODE="DEPLOY"
-  elif echo "$request" | grep -qiE "^generate|^create.*tool|^make.*tool|build.*cli tool|^Generate"; then
+  if echo "$request" | grep -qiE "deploy to production|deploy to vercel|ship to production|push to production"; then
     MODE="GENERATE"
+  elif echo "$request" | grep -qiE "^generate|^create.*tool|^make.*tool|build.*cli tool|^Generate"; then
+    MODE="DEPLOY"
   elif echo "$request" | grep -qiE "^(check|scan|audit|diagnose|inspect|verify)( |$)"; then
     MODE="CHECK"
   elif echo "$request" | grep -qiE "(^review|security review|bug review|code review|audit|scan for|analyze this)"; then
@@ -71,6 +71,10 @@ mode_new() {
   fi
 
   # 1.5. Generate interface contract
+    # Pass recon's file count to architect
+  export RECON_FILE_COUNT=$(python3 -c "import json; phases=json.load(open('$REPODIR/.codex/phases.json')); print(sum(len(p.get('files',[])) for p in phases.get('phases',[])))" 2>/dev/null || echo "unknown")
+  export RECON_PHASES=$(python3 -c "import json; phases=json.load(open('$REPODIR/.codex/phases.json')); [print(f'{p.get("name",p.get("id"))}: {p.get("files",[])}') for p in phases.get('phases',[])]" 2>/dev/null || echo "")
+
   echo "[CONTRACT] Designing interfaces..."
   bash "${SKILLDIR}/sandbox/architect.sh" --contract "$REPODIR"
 
@@ -111,8 +115,8 @@ for i, p in enumerate(data.get('phases', [])):
     read -r confirm
     [ "$confirm" != "y" ] && { echo "Aborted."; exit 0; }
     # Extract JSON and write phases.json
-    echo "$spec" | python3 -c "
 import sys, json
+    echo "$spec" | python3 -c "
 text = sys.stdin.read()
 start = text.find('{')
 if start != -1:
@@ -302,13 +306,24 @@ mode_check() {
 # BUILD LOOP
 # =============================================================================
 run_build_loop() {
+  set +e
   CODEX_REPO="$REPODIR" MODE="$MODE" bash "$SKILLDIR/runcycle.sh" 2>&1 | tee "$REPODIR/.codex/build.log"
+  local build_exit=$?
+  set -e
+
   echo ""
+    # Auto-generate README if missing
+  bash "${SKILLDIR}/sandbox/swarm.sh" --readme "$REPODIR" 2>/dev/null || true
   echo "Done. Location: $REPODIR"
+
+  # Push regardless of build exit code
   if [ -f "${SKILLDIR}/modules/github-push.sh" ]; then
+    echo "Pushing to GitHub..."
     bash "${SKILLDIR}/modules/github-push.sh" "$REPODIR"
   fi
+
   echo "Full log: $REPODIR/.codex/build.log"
+  return $build_exit
 }
 
 # =============================================================================

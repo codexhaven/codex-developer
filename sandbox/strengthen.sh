@@ -89,7 +89,7 @@ $file_content
 
 ## INSTRUCTIONS
 Review this file for production readiness. Identify and fix:
-1. Edge cases and input validation (nulls, empty, division by zero, bounds)
+0. STRING QUOTING: Ensure ALL string literals are quoted. Fix any unquoted strings immediately. 1. Edge cases and input validation (nulls, empty, division by zero, bounds)
 2. Error handling (proper error propagation, try/except)
 3. Performance issues
 4. Missing documentation (docstrings)

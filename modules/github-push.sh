@@ -6,7 +6,7 @@ set -euo pipefail
 [ -f "$HOME/.hermes/.env" ] && set -a && source "$HOME/.hermes/.env" && set +a
 
 PROJECT="${1:-$REPODIR}"
-GITHUB_USER="${GITHUB_USER:-codex-developer}"
+GITHUB_USER="${GITHUB_USER:-codexhaven}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 
 if [ -z "$GITHUB_TOKEN" ]; then
@@ -18,8 +18,8 @@ cd "$PROJECT"
 REPO_NAME=$(basename "$PROJECT")
 
 # Init git if needed
-[ -d .git ] || git init
-git config user.email "codex@github"
+[ -d .git ] || git init --initial-branch=main 2>/dev/null
+git config user.email "codex@codexhaven.dev"
 git config user.name "Codex Developer"
 
 # Add all files
@@ -34,7 +34,7 @@ if ! git remote | grep -q origin; then
   git remote add origin "https://${GITHUB_TOKEN}@github.com/${GITHUB_USER}/${REPO_NAME}.git"
 fi
 
-# Push — create repo if it doesn't exist via API
+# Check if repo exists, create if not
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
   -H "Authorization: token ${GITHUB_TOKEN}" \
   -H "Accept: application/vnd.github+json" \
@@ -45,8 +45,8 @@ if [ "$HTTP_CODE" = "404" ]; then
   curl -s -H "Authorization: token ${GITHUB_TOKEN}" \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/user/repos" \
-    -d "{\"name\":\"${REPO_NAME}\",\"private\":true,\"auto_init\":false}" > /dev/null
+    -d "{\"name\":\"${REPO_NAME}\",\"private\":false,\"auto_init\":false}" > /dev/null
 fi
 
-git push -u origin master --force 2>&1
+git push -u origin main --force 2>git push -u origin master --force 2>&11
 echo "LIVE: https://github.com/${GITHUB_USER}/${REPO_NAME}"

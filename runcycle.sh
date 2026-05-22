@@ -25,14 +25,17 @@ acquire_lock() { exec 9>"$LOCKFILE"; flock -n 9 || { echo "[SKIP] Locked."; exit
 release_lock() { flock -u 9 2>/dev/null; rm -f "$LOCKFILE" 2>/dev/null; }
 
 log() {
-  local level="INFO" msg="$*" color=""
+  local msg="$*" color="" icon=""
   case "$msg" in
-    *FAIL*|*ERROR*) level="ERROR"; color="\033[1;31m" ;;
-    *SUCCESS*|*BUILT*|*PASS*) level="SUCCESS"; color="\033[1;32m" ;;
-    *WARN*) level="WARN"; color="\033[1;33m" ;;
-    *CYCLE*|*PLANNING*) level="DEBUG"; color="\033[1;36m" ;;
+    *FAIL*|*ERROR*) color="\\033[1;31m"; icon="✗" ;;
+    *SUCCESS*|*BUILT*|*PASS*) color="\\033[1;32m"; icon="✓" ;;
+    *WARN*) color="\\033[1;33m"; icon="⚠" ;;
+    *CYCLE*|*PLANNING*) color="\\033[1;36m"; icon="▶" ;;
+    *DONE*) color="\\033[1;32m"; icon="★" ;;
+    *VERIFY*) color="\\033[0;36m"; icon="🔍" ;;
+    *) color="\\033[0;37m"; icon="·" ;;
   esac
-  echo -e "${color}[$level]\033[0m $msg"
+  echo -e "${color}[${icon}] ${msg}\\[0m"
 }
 
 # --- Modules ---
@@ -211,6 +214,22 @@ apply_file() {
   content=$(echo "$content" | sed "/^\`\`\`/d")
   [ -n "$filepath" ] && [ -n "$content" ] || return 1
 
+  # Aggressive path deduplication: strip any absolute path prefix, keep only the relative part
+  # Handle: /data/data/.../project/app/file.py → app/file.py
+  # Handle: /home/user/project/app/file.py → app/file.py
+  filepath=$(echo "$filepath" | sed 's|.*/'"$(basename "$REPODIR")"'/||')
+  # Match filepath against contract modules
+  if [ -f "${REPODIR}/.codex/contract.json" ]; then
+    local contract_match=$(python3 -c "
+import json
+contract = json.load(open(\"${REPODIR}/.codex/contract.json\"))
+for mod_path in contract.get(\"modules\", {}).keys():
+    if mod_path.endswith(\"/\" + \"$filepath\".split(\"/\")[-1]) or \"$filepath\".endswith(mod_path):
+        print(mod_path)
+        break
+" 2>/dev/null)
+    [ -n "$contract_match" ] && filepath="$contract_match"
+  fi
   filepath="${filepath#$REPODIR/}"
   filepath="${filepath#/}"
 
@@ -239,9 +258,11 @@ verify_file() {
     py) python3 -m py_compile "$fp" 2>&1 || { log "VERIFY FAIL: $1"; return 1; } ;;
     html|htm) python3 -m html.parser "$fp" 2>/dev/null || { log "VERIFY FAIL: $1"; return 1; } ;;
     js|ts|tsx|jsx) node --check "$fp" 2>/dev/null || true
-      bash "${SKILLDIR}/modules/import-check.sh" "$fp" "$REPODIR" 2>/dev/null | while read -r warn; do
-        [ -n "$warn" ] && log "$warn"
-      done
+      if [ -f "${SKILLDIR}/modules/import-check.sh" ]; then
+        bash "${SKILLDIR}/modules/import-check.sh" "$fp" "$REPODIR" 2>/dev/null | while read -r warn; do
+          [ -n "$warn" ] && log "$warn"
+        done
+      fi
       ;;
   esac
   return 0
@@ -273,7 +294,7 @@ revert_file() {
 
 commit_all() {
   cd "$REPODIR"
-  [ -d .git ] || { git init; git config user.email "codex@localhost"; git config user.name "Codex"; }
+  [ -d .git ] || { git init --initial-branch=main 2>/dev/null; git config user.email "codex@localhost"; git config user.name "Codex"; }
   git add -A && git commit -m "[Cycle] $1" 2>/dev/null || true
   echo "- [$(date +'%Y-%m-%d %H:%M')] $1" >> "${REPODIR}/CHANGELOG.md"
 }
@@ -293,10 +314,37 @@ generate_queue() {
 }
 
 # =============================================================================
+# RUN PLUGINS (if available)
+# =============================================================================
+run_plugins() {
+  local hook="$1"
+  if [ -d "${SKILLDIR}/plugins" ]; then
+    for plugin in "${SKILLDIR}/plugins/"*.sh; do
+      [ -f "$plugin" ] && bash "$plugin" "$hook" "$REPODIR" 2>/dev/null || true
+    done
+  fi
+}
+
+# =============================================================================
+# STRENGTHEN FILE (if available)
+# =============================================================================
+strengthen_file() {
+  local filepath="$1"
+  if [ -f "${SKILLDIR}/sandbox/strengthen.sh" ]; then
+    bash "${SKILLDIR}/sandbox/strengthen.sh" "$REPODIR/$filepath" 2>/dev/null || true
+  fi
+}
+
+# =============================================================================
 # MAIN
 # =============================================================================
 main() {
-  [ -d "${SKILLDIR}/sandbox" ] && for s in "${SKILLDIR}/sandbox/"*.sh; do source "$s"; done
+  # Source sandbox scripts if they exist
+  if [ -d "${SKILLDIR}/sandbox" ]; then
+    for s in "${SKILLDIR}/sandbox/"*.sh; do
+      [ -f "$s" ] && source "$s" 2>/dev/null || true
+    done
+  fi
 
   export REPODIR
   acquire_lock
@@ -304,17 +352,20 @@ main() {
   ensure_files
 
   # Resume from previous session if state exists
-  bash "${SKILLDIR}/sandbox/architect.sh" --resume
+  if [ -f "${SKILLDIR}/sandbox/architect.sh" ]; then
+    bash "${SKILLDIR}/sandbox/architect.sh" --resume 2>/dev/null || true
+  fi
 
   local goal=$(read_goal)
   export goal
 
   FAILURE_COUNT=$(python3 -c "import json; print(json.load(open('$STATEFILE')).get('failure_count', 0))" 2>/dev/null || echo 0)
 
-  bash "${SKILLDIR}/modules/vibestack/apply.sh" || true
-  bash "${SKILLDIR}/modules/flaskstack/apply.sh" 2>/dev/null || true
-  bash "${SKILLDIR}/modules/vanillastack/apply.sh" 2>/dev/null || true
-  bash "${SKILLDIR}/modules/gitignore-init.sh" 2>/dev/null || true
+  # Apply stack modules if they exist
+  [ -f "${SKILLDIR}/modules/vibestack/apply.sh" ] && bash "${SKILLDIR}/modules/vibestack/apply.sh" 2>/dev/null || true
+  [ -f "${SKILLDIR}/modules/flaskstack/apply.sh" ] && bash "${SKILLDIR}/modules/flaskstack/apply.sh" 2>/dev/null || true
+  [ -f "${SKILLDIR}/modules/vanillastack/apply.sh" ] && bash "${SKILLDIR}/modules/vanillastack/apply.sh" 2>/dev/null || true
+  [ -f "${SKILLDIR}/modules/gitignore-init.sh" ] && bash "${SKILLDIR}/modules/gitignore-init.sh" 2>/dev/null || true
 
   local max_cycles=30
   while [ $max_cycles -gt 0 ]; do
@@ -331,16 +382,23 @@ main() {
         log "EXISTING PROJECT: $file_count files."
         generate_queue "$goal" || break
       else
-        local tmpl; tmpl=$(bash "${SKILLDIR}/modules/template-detect.sh" detect "$goal" 2>/dev/null || echo "")
-        if [ -n "$tmpl" ]; then echo "$tmpl" > "$QUEUEFILE"; log "TEMPLATE: Using project template"
-        else generate_queue "$goal" || break; fi
+        local tmpl=""
+        if [ -f "${SKILLDIR}/modules/template-detect.sh" ]; then
+          tmpl=$(bash "${SKILLDIR}/modules/template-detect.sh" detect "$goal" 2>/dev/null || echo "")
+        fi
+        if [ -n "$tmpl" ]; then 
+          echo "$tmpl" > "$QUEUEFILE"
+          log "TEMPLATE: Using project template"
+        else 
+          generate_queue "$goal" || break
+        fi
       fi
     fi
 
     local entry=$(next_file)
     if [ -z "$entry" ]; then
-      log "ALL DONE."
-      run_plugins "after-all-done" 2>/dev/null || true
+      log "DONE"
+      run_plugins "after-all-done"
       break
     fi
 
@@ -354,10 +412,13 @@ main() {
     [ "$mode" = "SKIP" ] && continue
 
     # Phase Gate
-    if ! bash "${SKILLDIR}/sandbox/architect.sh" --gate "$current"; then
+    if [ -f "${SKILLDIR}/sandbox/architect.sh" ]; then
+      if ! bash "${SKILLDIR}/sandbox/architect.sh" --gate "$current" 2>/dev/null; then
         log "PHASE-GATE: Deferring $current"
         echo "$entry" >> "$DONEFILE"
         echo "$entry" >> "$QUEUEFILE"
+        continue
+      fi
     fi
 
     local cycle=$(python3 -c "import json; print(json.load(open('$STATEFILE')).get('cycle',0)+1)" 2>/dev/null || echo "1")
@@ -380,9 +441,10 @@ main() {
     local output
     output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
 
+    # Try patch fallback for large files
     if [ -z "$output" ] && [ "$mode" = "PATCH" ] && [ -f "$REPODIR/$current" ]; then
       local file_size=$(wc -c < "$REPODIR/$current" 2>/dev/null || echo 0)
-      if [ "$file_size" -gt 10000 ]; then
+      if [ "$file_size" -gt 10000 ] && [ -f "${SKILLDIR}/modules/sed-patcher.sh" ]; then
         log "File too large for PATCH ($file_size bytes). Trying SED patcher..."
         if CODEX_REPO="$REPODIR" bash "${SKILLDIR}/modules/sed-patcher.sh" "$current" "$desc" "$goal" 2>/dev/null; then
           log "SED patcher succeeded"
@@ -397,7 +459,7 @@ main() {
     if [ -z "$output" ]; then
       log "FAIL: Could not build $current"
       FAILURE_COUNT=$((FAILURE_COUNT + 1))
-      if [ "$FAILURE_COUNT" -gt 3 ]; then
+      if [ "$FAILURE_COUNT" -gt 3 ] && [ -f "${SKILLDIR}/modules/healer.sh" ]; then
         log "[ERROR] Threshold reached. Engaging HEALER."
         bash "${SKILLDIR}/modules/healer.sh"
         FAILURE_COUNT=0
@@ -423,7 +485,7 @@ main() {
       output=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
       if ! echo "$output" | grep -q "FILE:"; then
         log "Level 1 fix failed. Pivoting to Structural Healing..."
-        local map=$(python3 "${SKILLDIR}/modules/map_project.py")
+        local map=$(python3 "${SKILLDIR}/modules/map_project.py" 2>/dev/null || echo "")
         fix_prompt="## MODE: STRUCTURAL HEALING"$'\n'"## TARGET FILE: $applied"$'\n'"## PROJECT MAP: $map"$'\n'"## ERROR: $err_log"$'\n'"## INSTRUCTIONS: Re-align imports with the Project Map above."
         output=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
       fi
@@ -437,27 +499,93 @@ main() {
     fi
     log "VERIFY: PASS"
 
-    # Contract compliance + breaking change detection
-    if [ -f "${SKILLDIR}/modules/dependency-guard.sh" ]; then
-      bash "${SKILLDIR}/modules/dependency-guard.sh" "$REPODIR" "$REPODIR/$applied" 2>/dev/null || true
+    # CONTRACT ENFORCEMENT: validate function signatures match contract
+    if [ -f "${REPODIR}/.codex/contract.json" ]; then
+      local contract_violations=$(python3 -c "
+import json, ast, sys
+contract = json.load(open('${REPODIR}/.codex/contract.json'))
+target = '$applied'
+if target in contract.get('modules', {}):
+    expected = contract['modules'][target].get('exports', [])
+    with open('${REPODIR}/$applied') as f:
+        tree = ast.parse(f.read())
+    actual = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef):
+            params = [a.arg for a in node.args.args]
+            actual[node.name] = params
+        elif isinstance(node, ast.ClassDef):
+            for item in node.body:
+                if isinstance(item, ast.FunctionDef):
+                    params = [a.arg for a in item.args.args]
+                    actual[f'{node.name}.{item.name}'] = params
+    
+    violations = []
+    for exp in expected:
+        name = exp['name']
+        expected_params = [p['name'] for p in exp.get('params', [])]
+        if name not in actual:
+            violations.append(f'MISSING: {exp["type"]} {name} not found in file')
+        elif expected_params and actual[name] != expected_params:
+            violations.append(f'SIGNATURE MISMATCH: {name}({actual[name]}) vs contract {name}({expected_params})')
+    
+    if violations:
+        for v in violations:
+            print(f'CONTRACT BLOCKED: {v}')
+        sys.exit(1)
+" 2>/dev/null)
+      if [ -n "$contract_violations" ]; then
+        echo "$contract_violations"
+        log "CONTRACT: File blocked — signatures don't match. Rebuilding..."
+        revert_file "$applied"
+        # Re-queue with contract requirements in the prompt
+        echo "$entry" >> "$QUEUEFILE"
+        continue
+      fi
     fi
 
-    bash "${SKILLDIR}/modules/smoke-tester.sh" "$REPODIR" || {
-      log "SMOKE FAIL"
-      FAILURE_COUNT=$((FAILURE_COUNT + 1))
-      if [ "$FAILURE_COUNT" -gt 3 ]; then
-        log "[ERROR] Threshold reached. Engaging HEALER."
-        bash "${SKILLDIR}/modules/healer.sh"
-        FAILURE_COUNT=0
-      else
-        log "[WARN] Smoke failure. Retry $FAILURE_COUNT/3"
-      fi
-      revert_file "$applied"; continue;
-    }
+    # Swarm: mine contract violations for new dependencies
+    if [ -f "${SKILLDIR}/sandbox/swarm.sh" ]; then
+      bash "${SKILLDIR}/sandbox/swarm.sh" --from-violations "$REPODIR" 2>/dev/null || true
+    fi
 
-    python3 "${SKILLDIR}/modules/scan_deps.py" "$REPODIR/$applied" "$REPODIR" "$QUEUEFILE" 2>/dev/null || true
-    run_plugins "after-verify" 2>/dev/null || true
-    bash "${SKILLDIR}/modules/failure-check.sh" check "$REPODIR/$applied" 2>/dev/null || true
+    # Check imports against contract
+    if [ -f "${SKILLDIR}/modules/contract-import-check.sh" ]; then
+      bash "${SKILLDIR}/modules/contract-import-check.sh" "$REPODIR" "$applied" 2>/dev/null || true
+    fi
+
+    # Contract compliance + breaking change detection
+    if [ -f "${SKILLDIR}/sandbox/swarm.sh" ]; then
+      bash "${SKILLDIR}/sandbox/swarm.sh" --guard "$REPODIR" "$applied" 2>/dev/null || true
+    fi
+
+    # Smoke test
+    if [ -f "${SKILLDIR}/modules/smoke-tester.sh" ]; then
+      if ! bash "${SKILLDIR}/modules/smoke-tester.sh" "$REPODIR" 2>/dev/null; then
+        log "SMOKE FAIL"
+        FAILURE_COUNT=$((FAILURE_COUNT + 1))
+        if [ "$FAILURE_COUNT" -gt 3 ] && [ -f "${SKILLDIR}/modules/healer.sh" ]; then
+          log "[ERROR] Threshold reached. Engaging HEALER."
+          bash "${SKILLDIR}/modules/healer.sh"
+          FAILURE_COUNT=0
+        else
+          log "[WARN] Smoke failure. Retry $FAILURE_COUNT/3"
+        fi
+        revert_file "$applied"
+        continue
+      fi
+    fi
+
+    # Scan dependencies
+    if [ -f "${SKILLDIR}/modules/scan_deps.py" ]; then
+      python3 "${SKILLDIR}/modules/scan_deps.py" "$REPODIR/$applied" "$REPODIR" "$QUEUEFILE" 2>/dev/null || true
+    fi
+
+    run_plugins "after-verify"
+
+    if [ -f "${SKILLDIR}/modules/failure-check.sh" ]; then
+      bash "${SKILLDIR}/modules/failure-check.sh" check "$REPODIR/$applied" 2>/dev/null || true
+    fi
 
     local lines=$(wc -l < "$REPODIR/$applied" 2>/dev/null || echo 0)
 
@@ -481,27 +609,41 @@ os.replace('$tmp_state', '$STATEFILE')
     commit_all "$applied"
 
     # Strengthen pass
-    if type strengthen_file >/dev/null 2>&1; then
-      strengthen_file "$applied"
-      cd "$REPODIR" && git add -A && git commit -m "[Strengthen] $applied" 2>/dev/null || true
+    strengthen_file "$applied"
+    cd "$REPODIR" && git add -A && git commit -m "[Strengthen] $applied" 2>/dev/null || true
+
+    if [ -f "${SKILLDIR}/lesson-analyzer.py" ]; then
+      python3 "${SKILLDIR}/lesson-analyzer.py" --consolidate "$REPODIR" 2>/dev/null || true
     fi
 
-    python3 "${SKILLDIR}/lesson-analyzer.py" --consolidate "$REPODIR" 2>/dev/null || true
-    bash "${SKILLDIR}/sandbox/architect.sh" --advance
+    if [ -f "${SKILLDIR}/sandbox/architect.sh" ]; then
+      bash "${SKILLDIR}/sandbox/architect.sh" --advance 2>/dev/null || true
+    fi
 
     log "$mode: $applied (${lines}L)"
   done
 
-  if [ -d "$REPODIR/tests" ]; then
+  if [ -d "$REPODIR/tests" ] && [ -f "${SKILLDIR}/modules/self-test.sh" ]; then
     log "Running tests..."
-    bash "${SKILLDIR}/modules/self-test.sh" "$REPODIR" 2>&1 | while read -r l; do [ -n "$l" ] && log "TEST: $l"; done
+    bash "${SKILLDIR}/modules/self-test.sh" "$REPODIR" 2>&1 | while read -r l; do
+      [ -n "$l" ] && log "TEST: $l"
+    done
   fi
 
-  bash "${SKILLDIR}/sandbox/strengthen.sh" --flatten 2>/dev/null || true
-  # Scan project capabilities
-  bash "${SKILLDIR}/modules/capability-scanner.sh" "$REPODIR" 2>/dev/null || true
+  if [ -f "${SKILLDIR}/sandbox/strengthen.sh" ]; then
+    bash "${SKILLDIR}/sandbox/strengthen.sh" --flatten 2>/dev/null || true
+  fi
 
-  bash "${SKILLDIR}/modules/symbol-check.sh" "$REPODIR" 2>&1 | while read -r l; do [ -n "$l" ] && log "SYMBOL: $l"; done
+  # Scan project capabilities
+  if [ -f "${SKILLDIR}/modules/capability-scanner.sh" ]; then
+    bash "${SKILLDIR}/modules/capability-scanner.sh" "$REPODIR" 2>/dev/null || true
+  fi
+
+  if [ -f "${SKILLDIR}/modules/symbol-check.sh" ]; then
+    bash "${SKILLDIR}/modules/symbol-check.sh" "$REPODIR" 2>&1 | while read -r l; do
+      [ -n "$l" ] && log "SYMBOL: $l"
+    done
+  fi
 }
 
 main "$@"
