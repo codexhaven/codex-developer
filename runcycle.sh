@@ -416,6 +416,11 @@ main() {
       if ! bash "${SKILLDIR}/sandbox/architect.sh" --gate "$current" 2>/dev/null; then
         log "PHASE-GATE: Deferring $current"
         echo "$entry" >> "$DONEFILE"
+
+    # Mirror: capture build patterns
+    if type log_mirror >/dev/null 2>&1; then
+      log_mirror 2>/dev/null || true
+    fi
         echo "$entry" >> "$QUEUEFILE"
         continue
       fi
@@ -602,6 +607,11 @@ json.dump(s, open('$tmp_state', 'w'), indent=2)
 os.replace('$tmp_state', '$STATEFILE')
 " 2>/dev/null || true
     echo "$entry" >> "$DONEFILE"
+
+    # Mirror: capture build patterns
+    if type log_mirror >/dev/null 2>&1; then
+      log_mirror 2>/dev/null || true
+    fi
 
     mkdir -p "$REPODIR/.codex"
     echo "{\"cycle\":$cycle,\"file\":\"$applied\",\"mode\":\"$mode\",\"desc\":\"$desc\",\"time\":\"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"}" >> "$REPODIR/.codex/cycle-log.jsonl" 2>/dev/null || true
