@@ -9,6 +9,7 @@ architect_contract() {
   local DEPGRAPH="${REPODIR}/.codex/dependency_graph.json"
 
   echo "[ARCHITECT] Validating recon's contract..."
+  validate_class_names || exit 1
 
   if [ ! -f "$CONTRACTFILE" ] || [ ! -s "$CONTRACTFILE" ]; then
     echo "[ARCHITECT] No contract found. Recon may have failed."
@@ -150,6 +151,34 @@ if resume is not None and __import__('os').path.exists('$phases'):
         json.dump(phases, f, indent=2)
     print(f'[ARCHITECT] Resumed from phase {resume+1}')
 " 2>/dev/null
+}
+
+validate_class_names() {
+  local REPODIR="${1:-${REPODIR:-.}}"
+  local CONTRACTFILE="${REPODIR}/.codex/contract.json"
+
+  [ ! -f "$CONTRACTFILE" ] && return 0
+
+  python3 -c "
+import json, os, sys
+repodir = os.environ.get('REPODIR', '.')
+cf = os.path.join(repodir, '.codex', 'contract.json')
+data = json.load(open(cf))
+
+errors = []
+for mod_path, mod_data in data.get('modules', {}).items():
+    for exp in mod_data.get('exports', []):
+        name = exp.get('name', '')
+        if name == 'Manager':
+            errors.append(f\"ERROR: Generic class 'Manager' not allowed in {mod_path}. Use specific name like {mod_path.split('/')[-1].replace('.py', '').capitalize()}Manager\")
+        if exp.get('type') == 'class' and not name.endswith(('Agent', 'Tool', 'Supervisor', 'Interface', 'Manager')):
+            errors.append(f\"WARNING: Class '{name}' should end with Agent/Tool/Supervisor/Interface in {mod_path}\")
+
+if errors:
+    print('\n'.join(errors))
+    sys.exit(1)
+print('[ARCHITECT] Class naming validation passed')
+" 2>/dev/null || return 1
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

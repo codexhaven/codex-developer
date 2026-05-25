@@ -38,13 +38,15 @@ understand() {
   local code_files=$(find "$REPODIR" -maxdepth 4 -type f \( -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.html" -o -name "*.css" -o -name "*.sh" \) -not -path "*/.git/*" -not -path "*/.codex/*" -not -path "*/__pycache__/*" -not -path "*/node_modules/*" 2>/dev/null | wc -l)
 
   if echo "$request" | grep -qiE "deploy to production|deploy to vercel|ship to production|push to production"; then
-    MODE="GENERATE"
-  elif echo "$request" | grep -qiE "^generate|^create.*tool|^make.*tool|build.*cli tool|^Generate"; then
     MODE="DEPLOY"
+  elif echo "$request" | grep -qiE "^generate|^create.*tool|^make.*tool|build.*cli tool|^Generate"; then
+    MODE="GENERATE"
   elif echo "$request" | grep -qiE "^(check|scan|audit|diagnose|inspect|verify)( |$)"; then
     MODE="CHECK"
   elif echo "$request" | grep -qiE "(^review|security review|bug review|code review|audit|scan for|analyze this)"; then
     MODE="REVIEW"
+  elif echo "$request" | grep -qiE "^direct|^continue.*build|^resume|^pick up where"; then
+    MODE="DIRECT"
   elif [ "$code_files" -lt 1 ]; then
     MODE="NEW"
   elif [ -f "$REPODIR/.codex/build-queue.txt" ] && [ -s "$REPODIR/.codex/build-queue.txt" ]; then
@@ -68,6 +70,14 @@ mode_new() {
   echo "Initiating Discovery Phase..."
   if [ -f "${SKILLDIR}/sandbox/recon.sh" ]; then
     bash "${SKILLDIR}/sandbox/recon.sh" "$REPODIR"
+  fi
+
+  # Check if request contains explicit file paths — if so, use them directly
+  local explicit_files=$(echo "$REQUEST" | grep -oE '[a-zA-Z0-9_/.-]+\.(py|js|ts|tsx|jsx|html|css|sh|json|yml|yaml|md|txt|toml|sql|ipynb)' | sort -u | wc -l)
+  if [ "$explicit_files" -gt 3 ]; then
+    echo "[NEW] Detected $explicit_files explicit files in request — using direct mode"
+    mode_direct
+    return
   fi
 
   # 1.5. Generate interface contract
@@ -96,12 +106,16 @@ for i, p in enumerate(data.get('phases', [])):
     # Check contract-phase alignment
   :
 
-  echo -n "Approve this phase plan? (y/n): "
+  if [ "${AUTO_YES:-false}" = "true" ]; then
+    echo "AUTO_YES: Approving phase plan..."
+  else
+    echo -n "Approve this phase plan? (y/n): "
     read -r confirm
     if [ "$confirm" != "y" ]; then
       echo "Aborted. Edit phases.json and retry, or re-run with a different request."
       exit 0
     fi
+  fi
   else
     echo "[RECON] No phases.json produced. Falling back to direct spec generation..."
     local spec=$(hermes chat -q "Create a specification with phases.json containing 'files' arrays for: $REQUEST. Output the spec and a valid JSON phases block." --yolo --quiet 2>/dev/null || echo "")
@@ -115,8 +129,8 @@ for i, p in enumerate(data.get('phases', [])):
     read -r confirm
     [ "$confirm" != "y" ] && { echo "Aborted."; exit 0; }
     # Extract JSON and write phases.json
-import sys, json
     echo "$spec" | python3 -c "
+import sys, json
 text = sys.stdin.read()
 start = text.find('{')
 if start != -1:
@@ -147,7 +161,6 @@ count = 0
 for phase in data.get('phases', []):
     for f in phase.get('files', []):
         # Strip leading slash for relative paths
-        f = f.lstrip('/')
         f = f.lstrip('/')
         print(f'NEW:{f}')
         count += 1
@@ -210,8 +223,82 @@ for cat in ['generators', 'scripts']:
 }
 
 # =============================================================================
-# MODE: DEPLOY
+# MODE: DIRECT — Seamless continuation
 # =============================================================================
+mode_direct() {
+  mkdir -p "$REPODIR/.codex"
+  echo "$REQUEST" > "$REPODIR/.codex/goal.md"
+
+  # Check for unfinished builds first
+  if [ -f "$REPODIR/.codex/build-done.txt" ] && [ -s "$REPODIR/.codex/build-done.txt" ] && \
+     [ -f "$REPODIR/.codex/build-queue.txt" ] && [ -s "$REPODIR/.codex/build-queue.txt" ]; then
+    local done_count=$(wc -l < "$REPODIR/.codex/build-done.txt" 2>/dev/null || echo 0)
+    local queue_count=$(wc -l < "$REPODIR/.codex/build-queue.txt" 2>/dev/null || echo 0)
+    if [ "$done_count" -lt "$queue_count" ]; then
+      echo "Found unfinished build: $done_count/$queue_count files completed."
+      echo "Remaining queue:"
+      grep -vFf "$REPODIR/.codex/build-done.txt" "$REPODIR/.codex/build-queue.txt" 2>/dev/null || true
+      echo -n "Continue? (y/n): "
+      read -r confirm
+      [ "$confirm" != "y" ] && { echo "Aborted."; exit 0; }
+      run_build_loop
+      return
+    fi
+  fi
+
+  # Resume existing completed queue
+  if [ -f "$REPODIR/.codex/build-queue.txt" ] && [ -s "$REPODIR/.codex/build-queue.txt" ]; then
+    echo "Resuming existing DIRECT build queue..."
+    cat "$REPODIR/.codex/build-queue.txt"
+    echo -n "Continue? (y/n): "
+    read -r confirm
+    [ "$confirm" != "y" ] && { echo "Aborted."; exit 0; }
+    run_build_loop
+    return
+  fi
+
+  # DIRECT mode: use exact filenames from request, no recon
+  echo "Creating new DIRECT build plan..."
+  > "$REPODIR/.codex/build-queue.txt"
+  > "$REPODIR/.codex/build-done.txt"
+  echo "$REQUEST" | grep -oE '[a-zA-Z0-9_/.-]+\.(py|js|ts|tsx|jsx|html|css|sh|json|yml|yaml|md|txt|toml|sql|ipynb)' | sort -u | while read -r f; do
+    [ -z "$f" ] && continue
+    if [ -f "$REPODIR/$f" ]; then
+      echo "PATCH:$f - $REQUEST" >> "$REPODIR/.codex/build-queue.txt"
+    else
+      echo "NEW:$f" >> "$REPODIR/.codex/build-queue.txt"
+    fi
+  done
+
+  local entries=$(wc -l < "$REPODIR/.codex/build-queue.txt" 2>/dev/null || echo 0)
+  if [ "$entries" -eq 0 ]; then
+    echo "All files exist. Nothing to build."
+    exit 0
+  fi
+
+  # Generate phases.json for phase gate compatibility
+  python3 -c "
+import json
+files = []
+with open('$REPODIR/.codex/build-queue.txt') as f:
+    for line in f:
+        line = line.strip()
+        if line.startswith('NEW:') or line.startswith('PATCH:'):
+            fname = line.replace('NEW:','').replace('PATCH:','').split(' - ')[0].strip()
+            files.append(fname)
+phases = {'phases': [{'id': 'phase-1', 'name': 'Direct Build', 'files': files}], 'current_phase': 0}
+with open('$REPODIR/.codex/phases.json', 'w') as f:
+    json.dump(phases, f, indent=2)
+print(f'[DIRECT] Created phases.json with {len(files)} files')
+" 2>/dev/null || true
+
+  echo "Plan: $entries files"
+  cat "$REPODIR/.codex/build-queue.txt"
+  echo -n "Approve? (y/n): "
+  read -r confirm
+  [ "$confirm" != "y" ] && { echo "Aborted."; exit 0; }
+  run_build_loop
+}
 mode_deploy() {
   echo "Preparing project for deployment..."
   cd "$REPODIR"
@@ -254,7 +341,8 @@ mode_review() {
   > "$REPODIR/.codex/build-done.txt"
 
   local files=$(find "$REPODIR" -maxdepth 10 -type f \( -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.sh" -o -name "*.json" -o -name "*.md" \) -not -path "*/.git/*" -not -path "*/.codex/*" -not -path "*/reviews/*" -not -path "*/__pycache__/*" -not -path "*/node_modules/*" 2>/dev/null)
-  local total=$(echo "$files" | wc -l) done=0
+  local total=$(echo "$files" | wc -l)
+  local done=0
   echo "Files to review: $total"
 
   while IFS= read -r file; do
@@ -295,10 +383,14 @@ mode_continuation() {
 mode_check() {
   echo "Running diagnostics on $REPODIR..."
   if [ -f "${SKILLDIR}/modules/import-check.sh" ]; then
-    find "$REPODIR" -type f \( -name "*.tsx" -o -name "*.ts" -o -name "*.js" \) -not -path "*/node_modules/*" 2>/dev/null | while read -r f; do
+    find "$REPODIR" -type f \( -name "*.py" -o -name "*.tsx" -o -name "*.ts" -o -name "*.js" -o -name "*.sh" \) -not -path "*/node_modules/*" -not -path "*/.git/*" 2>/dev/null | while read -r f; do
       bash "${SKILLDIR}/modules/import-check.sh" "$f" "$REPODIR" 2>/dev/null
     done
   fi
+  # Also run Python syntax check
+  find "$REPODIR" -type f -name "*.py" -not -path "*/.git/*" 2>/dev/null | while read -r f; do
+    python3 -m py_compile "$f" 2>/dev/null && echo "OK: $f" || echo "FAIL: $f"
+  done
   echo "Check complete."
 }
 
@@ -306,6 +398,10 @@ mode_check() {
 # BUILD LOOP
 # =============================================================================
 run_build_loop() {
+  # Queue README before build starts
+  if [ ! -f "$REPODIR/README.md" ]; then
+    echo "NEW:README.md" >> "$REPODIR/.codex/build-queue.txt"
+  fi
   set +e
   CODEX_REPO="$REPODIR" MODE="$MODE" bash "$SKILLDIR/runcycle.sh" 2>&1 | tee "$REPODIR/.codex/build.log"
   local build_exit=$?
@@ -316,10 +412,24 @@ run_build_loop() {
   bash "${SKILLDIR}/sandbox/swarm.sh" --readme "$REPODIR" 2>/dev/null || true
   echo "Done. Location: $REPODIR"
 
-  # Push regardless of build exit code
-  if [ -f "${SKILLDIR}/modules/github-push.sh" ]; then
-    echo "Pushing to GitHub..."
-    bash "${SKILLDIR}/modules/github-push.sh" "$REPODIR"
+  # Push on successful build (exit 0) or clean DONE (empty queue = no error)
+  if [ $build_exit -eq 0 ] && [ -f "${SKILLDIR}/modules/github-push.sh" ]; then
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+      echo "Pushing to GitHub..."
+      bash "${SKILLDIR}/modules/github-push.sh" "$REPODIR"
+    else
+      echo "GITHUB_TOKEN not set. Skipping push."
+    fi
+  elif grep -q "DONE" "$REPODIR/.codex/build.log" 2>/dev/null && [ -f "${SKILLDIR}/modules/github-push.sh" ]; then
+    # Build completed successfully (DONE) even if exit code was non-zero
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+      echo "Build complete. Pushing to GitHub..."
+      bash "${SKILLDIR}/modules/github-push.sh" "$REPODIR"
+    else
+      echo "GITHUB_TOKEN not set. Set it in ~/.hermes/.env to enable auto-push."
+    fi
+  elif [ $build_exit -ne 0 ]; then
+    echo "Build failed. Skipping push to GitHub."
   fi
 
   echo "Full log: $REPODIR/.codex/build.log"
@@ -332,7 +442,10 @@ run_build_loop() {
 main() {
   REQUEST="$1"
   REPODIR="${2:-$HOME/projects}"
-  [ -z "$REQUEST" ] && { echo "Usage: listen.sh 'request' [directory]"; exit 1; }
+  AUTO_YES=false
+  [ "${3:-}" = "--yes" ] || [ "${3:-}" = "-y" ] && AUTO_YES=true
+  [ -z "$REQUEST" ] && { echo "Usage: listen.sh 'request' [directory] [--yes]"; exit 1; }
+  export AUTO_YES
   understand "$REQUEST" "$REPODIR"
 
   # Check if request matches a known project capability
@@ -341,6 +454,7 @@ main() {
   fi
 
   case "$MODE" in
+    DIRECT) mode_direct ;;
     NEW) mode_new ;;
     GENERATE) mode_new ;;
     EXISTING) mode_existing ;;
@@ -353,3 +467,4 @@ main() {
 }
 
 main "$@"
+

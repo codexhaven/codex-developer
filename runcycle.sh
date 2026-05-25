@@ -244,6 +244,13 @@ for mod_path in contract.get(\"modules\", {}).keys():
 
   mkdir -p "$(dirname "$fp")"
   printf '%s' "$content" > "$fp"
+  bash ~/.hermes/skills/codex-developer/add_path_header.sh "$fp"
+    # Inject Python path header for import resolution
+    if [[ "$fp" == *.py ]]; then
+      if ! grep -q "sys.path.insert" "$fp" 2>/dev/null; then
+        sed -i "1iimport sys\nimport os\nsys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))\n" "$fp"
+      fi
+    fi
   echo "$filepath"
   return 0
 }
@@ -254,9 +261,20 @@ for mod_path in contract.get(\"modules\", {}).keys():
 verify_file() {
   local fp="$REPODIR/$1"
   [ -f "$fp" ] || { log "VERIFY FAIL: $1 missing"; return 1; }
+
+  # Check for stdlib name shadowing
+  local basename=$(basename "$1" .py)
+  local forbidden="collections email http json logging os pathlib random re socket sqlite3 string sys threading unittest xml"
+  for word in $forbidden; do
+    if [ "$basename" = "$word" ]; then
+      log "VERIFY FAIL: $1 shadows Python stdlib '$word'. Rename to ${word}_handler.py or similar."
+      return 1
+    fi
+  done
+
   case "${1##*.}" in
     py) python3 -m py_compile "$fp" 2>&1 || { log "VERIFY FAIL: $1"; return 1; } ;;
-    html|htm) python3 -m html.parser "$fp" 2>/dev/null || { log "VERIFY FAIL: $1"; return 1; } ;;
+    html|htm) python3 -c "from html.parser import HTMLParser; HTMLParser().feed(open('$fp').read())" 2>/dev/null || { log "VERIFY FAIL: $1"; return 1; } ;;
     js|ts|tsx|jsx) node --check "$fp" 2>/dev/null || true
       if [ -f "${SKILLDIR}/modules/import-check.sh" ]; then
         bash "${SKILLDIR}/modules/import-check.sh" "$fp" "$REPODIR" 2>/dev/null | while read -r warn; do
@@ -264,6 +282,10 @@ verify_file() {
         done
       fi
       ;;
+    json) python3 -c "import json; json.load(open('$fp'))" 2>/dev/null || { log "VERIFY FAIL: $1"; return 1; } ;;
+    sh|bash) bash -n "$fp" 2>/dev/null || { log "VERIFY FAIL: $1"; return 1; } ;;
+    yml|yaml) python3 -c "import yaml; yaml.safe_load(open('$fp'))" 2>/dev/null || true ;;
+    md|txt|css|toml|sql) : ;;  # No syntax check needed
   esac
   return 0
 }
@@ -367,7 +389,7 @@ main() {
   [ -f "${SKILLDIR}/modules/vanillastack/apply.sh" ] && bash "${SKILLDIR}/modules/vanillastack/apply.sh" 2>/dev/null || true
   [ -f "${SKILLDIR}/modules/gitignore-init.sh" ] && bash "${SKILLDIR}/modules/gitignore-init.sh" 2>/dev/null || true
 
-  local max_cycles=30
+  local max_cycles=50  # Higher ceiling, but will exit early when queue is empty
   while [ $max_cycles -gt 0 ]; do
     max_cycles=$((max_cycles - 1))
 
@@ -396,6 +418,12 @@ main() {
     fi
 
     local entry=$(next_file)
+    local is_emergency=false
+    if echo "$entry" | grep -q "^EMERGENCY:"; then
+      is_emergency=true
+      entry=$(echo "$entry" | sed 's/^EMERGENCY://')
+      log "EMERGENCY: Processing urgent file"
+    fi
     if [ -z "$entry" ]; then
       log "DONE"
       run_plugins "after-all-done"
@@ -412,16 +440,17 @@ main() {
     [ "$mode" = "SKIP" ] && continue
 
     # Phase Gate
-    if [ -f "${SKILLDIR}/sandbox/architect.sh" ]; then
+    if [ "$is_emergency" = true ]; then
+      log "EMERGENCY: Bypassing phase gate for $current"
+    elif [ -f "${SKILLDIR}/sandbox/architect.sh" ]; then
       if ! bash "${SKILLDIR}/sandbox/architect.sh" --gate "$current" 2>/dev/null; then
         log "PHASE-GATE: Deferring $current"
         echo "$entry" >> "$DONEFILE"
-
-    # Mirror: capture build patterns
-    if type log_mirror >/dev/null 2>&1; then
-      log_mirror 2>/dev/null || true
-    fi
         echo "$entry" >> "$QUEUEFILE"
+        # Mirror: capture build patterns
+        if type log_mirror >/dev/null 2>&1; then
+          log_mirror 2>/dev/null || true
+        fi
         continue
       fi
     fi
@@ -449,7 +478,7 @@ main() {
     # Try patch fallback for large files
     if [ -z "$output" ] && [ "$mode" = "PATCH" ] && [ -f "$REPODIR/$current" ]; then
       local file_size=$(wc -c < "$REPODIR/$current" 2>/dev/null || echo 0)
-      if [ "$file_size" -gt 10000 ] && [ -f "${SKILLDIR}/modules/sed-patcher.sh" ]; then
+      if [ -f "${SKILLDIR}/modules/sed-patcher.sh" ]; then
         log "File too large for PATCH ($file_size bytes). Trying SED patcher..."
         if CODEX_REPO="$REPODIR" bash "${SKILLDIR}/modules/sed-patcher.sh" "$current" "$desc" "$goal" 2>/dev/null; then
           log "SED patcher succeeded"
@@ -464,6 +493,8 @@ main() {
     if [ -z "$output" ]; then
       log "FAIL: Could not build $current"
       FAILURE_COUNT=$((FAILURE_COUNT + 1))
+      FAILURE_COUNT=$((FAILURE_COUNT + 1))
+      python3 -c "import json,os; s=json.load(open('$STATEFILE')); s['failure_count']=$FAILURE_COUNT; json.dump(s,open('$STATEFILE.tmp','w')); os.replace('$STATEFILE.tmp','$STATEFILE')" 2>/dev/null || true
       if [ "$FAILURE_COUNT" -gt 3 ] && [ -f "${SKILLDIR}/modules/healer.sh" ]; then
         log "[ERROR] Threshold reached. Engaging HEALER."
         bash "${SKILLDIR}/modules/healer.sh"
@@ -482,11 +513,44 @@ main() {
       continue
     fi
 
+    # Check for stdlib name collision and auto-rename
+    local basename=$(basename "$applied" .py)
+    local forbidden="collections email http json logging os pathlib random re socket sqlite3 string sys threading unittest xml"
+    local collision=false
+    for word in $forbidden; do
+      if [ "$basename" = "$word" ]; then
+        collision=true
+        break
+      fi
+    done
+    if [ "$collision" = true ]; then
+      local newname="${basename}_handler.py"
+      log "RENAMING: $applied -> $newname (stdlib collision)"
+      mv "$REPODIR/$applied" "$REPODIR/$newname" 2>/dev/null || true
+      # Update contract
+      if [ -f "${REPODIR}/.codex/contract.json" ]; then
+        python3 -c "
+import json
+cf = '${REPODIR}/.codex/contract.json'
+data = json.load(open(cf))
+if '$applied' in data.get('modules', {}):
+    data['modules']['$newname'] = data['modules'].pop('$applied')
+    with open(cf, 'w') as f:
+        json.dump(data, f, indent=2)
+    print('Contract updated')
+" 2>/dev/null || true
+      fi
+      # Update queue entry
+      sed -i "s|$applied|$newname|g" "$QUEUEFILE" 2>/dev/null || true
+      sed -i "s|$applied|$newname|g" "$DONEFILE" 2>/dev/null || true
+      applied="$newname"
+    fi
+
     # Structural Healing Pipeline
     if ! verify_file "$applied"; then
       log "Syntax failure in $applied. Initiating Adversarial Healing..."
       local err_log=$(cat "${REPODIR}/.codex/last_error.log" 2>/dev/null || echo "Unknown syntax error")
-      local fix_prompt="## MODE: FIX SYNTAX ERROR"$'\n'"## TARGET FILE: $applied"$'\n'"## ERROR: $err_log"$'\n'"## INSTRUCTIONS: Fix the syntax error. Do not change logic."
+      local fix_prompt="## MODE: FIX SYNTAX ERROR"$'\n'"## TARGET FILE: $applied"$'\n'"## ERROR: $err_log"$'\n'"## INSTRUCTIONS: Fix the syntax error. Do not change logic. If the error is a ModuleNotFoundError about a stdlib module, the filename is shadowing Python'\'s standard library — rename the file to avoid the collision (e.g. collections.py -> collections_handler.py)."
       output=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
       if ! echo "$output" | grep -q "FILE:"; then
         log "Level 1 fix failed. Pivoting to Structural Healing..."
@@ -531,8 +595,12 @@ if target in contract.get('modules', {}):
         expected_params = [p['name'] for p in exp.get('params', [])]
         if name not in actual:
             violations.append(f'MISSING: {exp["type"]} {name} not found in file')
-        elif expected_params and actual[name] != expected_params:
-            violations.append(f'SIGNATURE MISMATCH: {name}({actual[name]}) vs contract {name}({expected_params})')
+        else:
+            actual_params = actual[name]
+            if actual_params and actual_params[0] == 'self':
+                actual_params = actual_params[1:]
+            if expected_params and actual_params != expected_params:
+            violations.append(f'SIGNATURE MISMATCH: {name}({actual_params}) vs contract {name}({expected_params})')
     
     if violations:
         for v in violations:

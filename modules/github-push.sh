@@ -26,9 +26,6 @@ git config user.name "Codex Developer"
 git add -A
 git commit -m "Build $(date +%Y-%m-%d_%H:%M)" 2>/dev/null || true
 
-# Create repo on GitHub and push
-echo "Pushing to GitHub: $GITHUB_USER/$REPO_NAME"
-
 # Create remote if not exists
 if ! git remote | grep -q origin; then
   git remote add origin "https://${GITHUB_TOKEN}@github.com/${GITHUB_USER}/${REPO_NAME}.git"
@@ -48,5 +45,5 @@ if [ "$HTTP_CODE" = "404" ]; then
     -d "{\"name\":\"${REPO_NAME}\",\"private\":false,\"auto_init\":false}" > /dev/null
 fi
 
-git push -u origin main --force 2>git push -u origin master --force 2>&11
+git push -u origin main --force 2>&1
 echo "LIVE: https://github.com/${GITHUB_USER}/${REPO_NAME}"

@@ -101,6 +101,8 @@ Output format: FILE: $ROOT_FILE followed by the complete fixed file contents." \
     FIXED_CONTENT=$(echo "$FIX_OUTPUT" | sed -n '/^FILE:/,$p' | tail -n +2 | sed '/^\`\`\`/d')
     if [ -n "$FIXED_CONTENT" ]; then
       printf '%s' "$FIXED_CONTENT" > "${REPODIR}/${ROOT_FILE}"
+        queue_emergency "$ROOT_FILE" "Healer applied surgical fix"
+        queue_emergency "$ROOT_FILE" "Healer applied surgical fix"
       log_msg "Applied fix to $ROOT_FILE"
       
       # Re-verify
@@ -127,3 +129,87 @@ json.dump(s, open('$STATE_FILE', 'w'), indent=2)
 " 2>/dev/null || true
 
 log_msg "Healer cycle complete."
+
+# =============================================================================
+# EMERGENCY QUEUE
+# =============================================================================
+queue_emergency() {
+  local filepath="$1"
+  local reason="$2"
+  local QUEUEFILE="${REPODIR}/.codex/build-queue.txt"
+  echo "EMERGENCY:${filepath} - ${reason}" >> "$QUEUEFILE"
+  log_msg "EMERGENCY: ${filepath} queued for immediate rebuild"
+}
+
+# Fix missing try/except in functions
+fix_error_handling() {
+  local filepath="$1"
+  local content=$(cat "$filepath")
+  
+  # Check if functions lack try/except
+  if grep -q "^def " "$filepath" && ! grep -q "try:" "$filepath"; then
+    log_msg "Adding error handling to $filepath"
+    
+    python3 -c "
+import re
+with open('$filepath', 'r') as f:
+    content = f.read()
+
+# Find functions without try/except
+pattern = r'(def \w+\([^)]*\):.*?(?=\n def |\nclass |\Z))'
+def add_try_except(match):
+    func = match.group(0)
+    if 'try:' in func or 'logger' not in func:
+        return func
+    # Add try/except wrapper
+    lines = func.split('\n')
+    indent = len(lines[0]) - len(lines[0].lstrip())
+    indentation = ' ' * indent
+    new_lines = [lines[0]]
+    new_lines.append(f'{indentation}    try:')
+    for line in lines[1:]:
+        if line.strip():
+            new_lines.append(f'{indentation}        {line.lstrip()}')
+    new_lines.append(f'{indentation}    except Exception as e:')
+    new_lines.append(f'{indentation}        self.logger.error(f\"Function failed: {{e}}\")')
+    new_lines.append(f'{indentation}        return None')
+    return '\n'.join(new_lines)
+
+content = re.sub(pattern, add_try_except, content, flags=re.DOTALL)
+with open('$filepath', 'w') as f:
+    f.write(content)
+print(f'[HEALER] Added error handling to $filepath')
+" 2>/dev/null || true
+  fi
+}
+
+# Fix sync functions that should be async
+fix_async_patterns() {
+  local filepath="$1"
+  
+  # Check if file contains I/O operations without async
+  if grep -qE "(requests\.|subprocess\.|open\(|sqlite3\.|curl)" "$filepath"; then
+    if ! grep -q "async def" "$filepath"; then
+      log_msg "Adding async patterns to $filepath"
+      
+      sed -i 's/^def /async def /g' "$filepath"
+      sed -i 's/requests\.get/await asyncio.to_thread(requests.get)/g' "$filepath"
+      sed -i 's/subprocess\.run/await asyncio.to_thread(subprocess.run)/g' "$filepath"
+      
+      # Add asyncio import if missing
+      if ! grep -q "import asyncio" "$filepath"; then
+        sed -i '1iimport asyncio' "$filepath"
+      fi
+      
+      echo "[HEALER] Made async: $filepath"
+    fi
+  fi
+}
+
+queue_emergency() {
+  local filepath="$1"
+  local reason="$2"
+  local QUEUEFILE="${REPODIR}/.codex/build-queue.txt"
+  echo "EMERGENCY:${filepath} - ${reason}" >> "$QUEUEFILE"
+  log_msg "EMERGENCY: ${filepath} queued for immediate rebuild"
+}
