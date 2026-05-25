@@ -66,3 +66,11 @@
 {"type": "rule", "rule": "Detect target platform from request context. If Termux/Android, use stdlib or ARM64 pip packages. If Colab/cloud, use any ML packages."}
 {"type": "rule", "rule": "Local scripts that call cloud services (Colab, APIs) should not import heavy ML libraries. They prepare data and trigger remote jobs."}
 {"type": "rule", "rule": "When a project has both local and cloud components, put ML imports in the cloud component only."}
+{"type": "rule", "rule": "Every project MUST have at least one runnable entry point with if __name__ == '__main__' that initializes the system and accepts user input."}
+{"type": "rule", "rule": "The main entry point should wire all modules together — imports, initialization, and a run loop or command dispatch."}
+{"type": "rule", "rule": "Tools that write files or execute commands must actually perform the action, not just describe it. Use subprocess, os.system, or file I/O."}
+{"type": "rule", "rule": "Queue entries use format MODE: filepath - description. The filepath ends at the first ' - ' (space-hyphen-space). Everything after is description. Descriptions can contain hyphens."}
+{"type": "rule", "rule": "When generating PATCH queue entries, put the EXACT filepath first, then space-hyphen-space, then the change description. Example: PATCH: tools/execute_tool.py - use subprocess to actually run shell commands"}
+{"type": "rule", "rule": "NEVER hardcode API keys in source files. Use environment variables or .env files. Config files should have empty placeholder values."}
+{"type": "rule", "rule": "Add .env, config.yaml, and any file containing secrets to .gitignore before first commit."}
+{"type": "rule", "rule": "For Gemini API on Termux, use the OpenAI-compatible endpoint: https://generativelanguage.googleapis.com/v1beta/openai/chat/completions with Bearer token auth. Model: gemini-3.1-flash-lite-preview."}
