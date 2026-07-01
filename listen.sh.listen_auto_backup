@@ -47,7 +47,7 @@ understand() {
     MODE="REVIEW"
   elif echo "$request" | grep -qiE "^direct|^continue.*build|^resume|^pick up where"; then
     MODE="DIRECT"
-  elif echo "$request" | grep -qiE '\.(py|js|ts|html|css|sh|json|md|txt)'; then
+  elif echo "$request" | grep -qiE '[a-zA-Z0-9_/.-]+.(py|js|ts|tsx|jsx|html|css|sh|json|yml|yaml|md|txt|toml|sql|ipynb)'; then
     MODE="DIRECT"
   elif [ "$code_files" -lt 1 ]; then
     MODE="NEW"
@@ -443,30 +443,12 @@ run_build_loop() {
 # MAIN
 # =============================================================================
 main() {
-  # Defaults
-  AUTO_YES=false
-  DRY_RUN=false
-
-  # Parse options
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --yes|-y) AUTO_YES=true; shift ;;
-      --dry-run) DRY_RUN=true; shift ;;
-      *) break ;;
-    esac
-  done
-
-  # Now, the remaining arguments are: $1 = REQUEST, $2 = REPODIR (optional)
-  if [ -z "$1" ]; then
-    echo "Usage: listen.sh 'request' [directory] [--yes] [--dry-run]"
-    exit 1
-  fi
-
   REQUEST="$1"
   REPODIR="${2:-$HOME/projects}"
+  AUTO_YES=false
+  [ "${3:-}" = "--yes" ] || [ "${3:-}" = "-y" ] && AUTO_YES=true
+  [ -z "$REQUEST" ] && { echo "Usage: listen.sh 'request' [directory] [--yes]"; exit 1; }
   export AUTO_YES
-  export DRY_RUN
-
   understand "$REQUEST" "$REPODIR"
 
   # Check if request matches a known project capability
@@ -486,4 +468,6 @@ main() {
     *) mode_existing ;;
   esac
 }
+
 main "$@"
+

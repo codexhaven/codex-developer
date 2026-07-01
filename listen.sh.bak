@@ -443,30 +443,12 @@ run_build_loop() {
 # MAIN
 # =============================================================================
 main() {
-  # Defaults
-  AUTO_YES=false
-  DRY_RUN=false
-
-  # Parse options
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --yes|-y) AUTO_YES=true; shift ;;
-      --dry-run) DRY_RUN=true; shift ;;
-      *) break ;;
-    esac
-  done
-
-  # Now, the remaining arguments are: $1 = REQUEST, $2 = REPODIR (optional)
-  if [ -z "$1" ]; then
-    echo "Usage: listen.sh 'request' [directory] [--yes] [--dry-run]"
-    exit 1
-  fi
-
   REQUEST="$1"
   REPODIR="${2:-$HOME/projects}"
+  AUTO_YES=false
+  [ "${3:-}" = "--yes" ] || [ "${3:-}" = "-y" ] && AUTO_YES=true
+  [ -z "$REQUEST" ] && { echo "Usage: listen.sh 'request' [directory] [--yes]"; exit 1; }
   export AUTO_YES
-  export DRY_RUN
-
   understand "$REQUEST" "$REPODIR"
 
   # Check if request matches a known project capability
@@ -486,4 +468,6 @@ main() {
     *) mode_existing ;;
   esac
 }
+
 main "$@"
+

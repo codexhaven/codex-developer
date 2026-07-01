@@ -41,7 +41,7 @@ Key Features
 · Phase-Gated Builds: Complex projects built in ordered phases
 · Strengthen Pass: Every file hardened with cross-reference validation
 · DNA Fingerprint: # ctx: codexhaven embedded in every file
-· 64 Global Rules: Accumulated wisdom in every prompt
+· 76 Global Rules: Accumulated wisdom in every prompt
 · Auto GitHub: Every project pushed automatically
 · 7 Modes: NEW, GENERATE, EXISTING, REVIEW, CONTINUATION, CHECK, DEPLOY
 

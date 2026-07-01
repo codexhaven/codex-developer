@@ -27,10 +27,8 @@ $GOAL" --yolo --quiet 2>/dev/null || echo "")
   echo "[RECON] Domain research complete. Designing architecture..." >&2
 
   # STEP 1: Architecture design informed by domain research
-  attempt=1
-  max_attempts=3
-  while [ $attempt -le $max_attempts ]; do
-    hermes chat -q "Design a complete, buildable architecture for this project. Think like an architect who has studied this domain deeply.
+  hermes chat -q \
+"Design a complete, buildable architecture for this project. Think like an architect who has studied this domain deeply.
 
 ## PROJECT REQUEST
 $GOAL
@@ -45,10 +43,10 @@ GOOD: 'register_new_driver', 'track_daily_collections', 'generate_revenue_report
 
 ## STEP 2: GROUP INTO FILES (MAXIMUM 5)
 Group related capabilities. Each file = one clear domain. Use as many files as the domain genuinely needs — don't force too few or too many.
-- NO generic resource files. No 'utils.py', 'config.py', 'helpers.py', 'common.py'
+- NO generic utility files. No 'utils.py', 'config.py', 'helpers.py', 'common.py'
 - If a file would only have 1 tiny function, merge it into another file
 - BUT don't cram unrelated features into one file just to hit a file count
-- File names should reflect the domain: 'dctions.py' not 'database.py'
+- File names should reflect the domain: 'drivers.py' not 'database.py'
 
 ## STEP 3: DEFINE EVERY FUNCTION
 For every capability, write the exact function signature with:
@@ -58,7 +56,7 @@ For every capability, write the exact function signature with:
 - The REAL shell command, HTTP request, or SQL query that implements it
 
 Example:
-{\"\type\": \"function\", \"name\": \"get_wifi_password\", \"params\": [], \"returns\": \"str\", \"command\": \"dumpsys wifi | grep -A20 mWifiInfo | grep pss | cut -d= -f2\", \"description\": \"Extract current WiFi password from Android\"}
+{\"type\": \"function\", \"name\": \"get_wifi_password\", \"params\": [], \"returns\": \"str\", \"command\": \"dumpsys wifi | grep -A20 mWifiInfo | grep psk | cut -d= -f2\", \"description\": \"Extract current WiFi password from Android\"}
 
 BAD command: 'validate input', 'save data', 'process request'
 GOOD command: 'curl -s http://IP/login -d \"user=admin&pass=1234\"', 'sqlite3 db \"SELECT psk FROM passwords\"', 'ip route show default'
@@ -89,33 +87,23 @@ Files with no imports first. Then files that depend on those. Max 3 phases.
 ## ABSOLUTE RULES
 - Use the right number of files for the domain. Don't over-consolidate or over-split.
 - Every function MUST have a 'command' field with a REAL shell/HTTP/SQL command.
-- NO generic resource files. No 'utils.py', 'config.py', 'helpers.py', 'common.py'.
+- NO generic utility files (utils, config, helpers, common, validator, file_system).
 - NO simulated steps. NO 'echo data > file' as a real command.
 - Available tools: python3, curl, wget, timeout, bash, sqlite3, dumpsys, ip, ping, grep, awk, sed
 - Target the platform that makes sense for this project. State the target in research.
-- File paths relative: 'scanner.py' not '/home/user/scsript.png'
+- File paths relative: 'scanner.py' not '/home/user/scanner.py'
 - Every file in phases MUST be in modules. Every module in at least one phase.
 - DESIGN FOR THE DOMAIN. A matatu portal should feel like a matatu portal, not a todo list.
 - If alignment fails, the build will break. Get it right the first time.
 
-Output ONLY valid JSON. No markdown fences. No explanation text.
-" --yolo --quiet > "$CONTRACTFILE" 2> "$LOGFILE"
-    local EXIT=$?
-    set -euo pipefail
+Output ONLY valid JSON. No markdown fences. No explanation text." \
+    --yolo --quiet > "$CONTRACTFILE" 2> "$LOGFILE"
+  local EXIT=$?
+  set -euo pipefail
 
-    if [ $EXIT -ne 0 ] || [ ! -s "$CONTRACTFILE" ]; then
-      echo "[RECON] Generation failed. Check research.log" >&2
-      if [ $attempt -lt $max_attempts ]; then
-        attempt=$((($attempt+1)))
-        continue
-      else
-        # After last attempt, break to go to validation (which will likely fail)
-        break
-      fi
-    fi
-    # If we got here, we have a successful generation; break out of loop to proceed to validation
-    break
-  done
+  if [ $EXIT -ne 0 ] || [ ! -s "$CONTRACTFILE" ]; then
+    echo "[RECON] Generation failed. Check research.log" >&2; return 0
+  fi
 
   # Validate and extract
   if python3 -c "import json; json.load(open('$CONTRACTFILE'))" 2>/dev/null; then

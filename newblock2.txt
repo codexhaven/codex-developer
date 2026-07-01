@@ -1,0 +1,89 @@
+  attempt=1
+  max_attempts=3
+  while [ $attempt -le $max_attempts ]; do
+    hermes chat -q "Design a complete, buildable architecture for this project. Think like an architect who has studied this domain deeply.
+
+## PROJECT REQUEST
+$GOAL
+
+## DOMAIN RESEARCH (READ THIS FIRST)
+$DOMAIN_CONTEXT
+
+## STEP 1: EXTRACT REAL CAPABILITIES FROM DOMAIN
+Based on the domain research, what must this tool actually DO? List concrete, specific actions tied to real workflows discovered in the research.
+BAD: 'storage system', 'validation', 'file management', 'save_data', 'process_request', 'get_items', 'update_record'
+GOOD: 'register_new_driver', 'track_daily_collections', 'generate_revenue_report', 'send_bulk_sms', 'verify_driver_license'
+
+## STEP 2: GROUP INTO FILES (MAXIMUM 5)
+Group related capabilities. Each file = one clear domain. Use as many files as the domain genuinely needs — don't force too few or too many.
+- NO generic resource files. No 'utils.py', 'config.py', 'helpers.py', 'common.py'
+- If a file would only have 1 tiny function, merge it into another file
+- BUT don't cram unrelated features into one file just to hit a file count
+- File names should reflect the domain: 'dctions.py' not 'database.py'
+
+## STEP 3: DEFINE EVERY FUNCTION
+For every capability, write the exact function signature with:
+- Function name (verb_noun format)
+- Parameters with types
+- Return type
+- The REAL shell command, HTTP request, or SQL query that implements it
+
+Example:
+{\"\type\": \"function\", \"name\": \"get_wifi_password\", \"params\": [], \"returns\": \"str\", \"command\": \"dumpsys wifi | grep -A20 mWifiInfo | grep pss | cut -d= -f2\", \"description\": \"Extract current WiFi password from Android\"}
+
+BAD command: 'validate input', 'save data', 'process request'
+GOOD command: 'curl -s http://IP/login -d \"user=admin&pass=1234\"', 'sqlite3 db \"SELECT psk FROM passwords\"', 'ip route show default'
+
+## STEP 4: MAP ALL IMPORTS
+For every file, list exactly which other files it imports.
+
+## STEP 5: ORDER PHASES
+Files with no imports first. Then files that depend on those. Max 3 phases.
+
+## OUTPUT FORMAT — Valid JSON only
+{
+  \"research\": \"2-3 sentences about implementation approach\",
+  \"modules\": {
+    \"scanner.py\": {
+      \"description\": \"what this file does\",
+      \"exports\": [
+        {\"type\": \"function\", \"name\": \"func_name\", \"params\": [{\"name\": \"param1\", \"type\": \"str\"}], \"returns\": \"bool\", \"command\": \"real shell command here\", \"description\": \"what this does\"}
+      ],
+      \"imports\": []
+    }
+  },
+  \"phases\": [
+    {\"id\": \"phase-1\", \"name\": \"Foundation\", \"description\": \"...\", \"files\": [\"file1.py\"]}
+  ]
+}
+
+## ABSOLUTE RULES
+- Use the right number of files for the domain. Don't over-consolidate or over-split.
+- Every function MUST have a 'command' field with a REAL shell/HTTP/SQL command.
+- NO generic resource files. No 'utils.py', 'config.py', 'helpers.py', 'common.py'.
+- NO simulated steps. NO 'echo data > file' as a real command.
+- Available tools: python3, curl, wget, timeout, bash, sqlite3, dumpsys, ip, ping, grep, awk, sed
+- Target the platform that makes sense for this project. State the target in research.
+- File paths relative: 'scanner.py' not '/home/user/scsript.png'
+- Every file in phases MUST be in modules. Every module in at least one phase.
+- DESIGN FOR THE DOMAIN. A matatu portal should feel like a matatu portal, not a todo list.
+- If alignment fails, the build will break. Get it right the first time.
+
+Output ONLY valid JSON. No markdown fences. No explanation text.
+" --yolo --quiet > "$CONTRACTFILE" 2> "$LOGFILE"
+    local EXIT=$?
+    set -euo pipefail
+
+    if [ $EXIT -ne 0 ] || [ ! -s "$CONTRACTFILE" ]; then
+      echo "[RECON] Generation failed. Check research.log" >&2
+      if [ $attempt -lt $max_attempts ]; then
+        attempt=$((($attempt+1)))
+        continue
+      else
+        # After last attempt, break to go to validation (which will likely fail)
+        break
+      fi
+    fi
+    # If we got here, we have a successful generation; break out of loop to proceed to validation
+    break
+  done

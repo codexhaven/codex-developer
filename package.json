@@ -1,0 +1,8 @@
+{
+  "name": "calculator",
+  "version": "1.0.0",
+  "description": "A simple command-line calculator that adds two numbers",
+  "main": "calc.py",
+  "author": "Codex Developer",
+  "license": "MIT"
+}

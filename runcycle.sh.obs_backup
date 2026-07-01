@@ -124,6 +124,57 @@ get_built_context() {
     count=$((count + 1))
   done < <(find "$REPODIR" -maxdepth 2 -type f \( -name "*.py" -o -name "*.js" -o -name "*.sh" \) -not -path "*/.git/*" -not -path "*/__pycache__/*" 2>/dev/null | head -8)
 }
+detect_project_domain() {
+  local domains=()
+  # Check for Node.js
+  if [ -f "$REPODIR/package.json" ] || [ -f "$REPODIR/yarn.lock" ] || [ -f "$REPODIR/pnpm-lock.yaml" ]; then
+    domains+=("node")
+    domains+=("web")
+  fi
+  # Check for Python
+  if [ -f "$REPODIR/requirements.txt" ] || [ -f "$REPODIR/setup.py" ] || [ -f "$REPODIR/pyproject.toml" ]; then
+    domains+=("python")
+  fi
+  # Check for Rust
+  if [ -f "$REPODIR/Cargo.toml" ]; then
+    domains+=("rust")
+  fi
+  # Check for Go
+  if [ -f "$REPODIR/go.mod" ]; then
+    domains+=("go")
+  fi
+  # Check for Java (Maven)
+  if [ -f "$REPODIR/pom.xml" ]; then
+    domains+=("java")
+  fi
+  # Check for PHP (Composer)
+  if [ -f "$REPODIR/composer.json" ]; then
+    domains+=("php")
+  fi
+  # Check for Ruby (Bundler)
+  if [ -f "$REPODIR/Gemfile" ]; then
+    domains+=("ruby")
+  fi
+  # Check for .NET
+  if find "$REPODIR" -maxdepth 2 -name "*.csproj" -o -name "*.vbproj" -o -name "*.fsproj" | grep -q .; then
+    domains+=("dotnet")
+  fi
+  # Check for C/C++ (Makefile)
+  if [ -f "$REPODIR/Makefile" ] || [ -f "$REPODIR/gnumakefile" ] || [ -f "$REPODIR/Makefile.am" ]; then
+    domains+=("c")
+    domains+=("cpp")
+  fi
+  # Check for CMake
+  if [ -f "$REPODIR/CMakeLists.txt" ]; then
+    domains+=("cmake")
+  fi
+  # If no domain detected, default to "general"
+  if [ ${#domains[@]} -eq 0 ]; then
+    domains+=("general")
+  fi
+  # Output as space-separated string
+  echo "${domains[@]}"
+}
 
 # =============================================================================
 # SELF-PROTECTION
@@ -461,7 +512,52 @@ main() {
     local built=$(get_built_context "$mode" "$current")
     local context_map=$(get_project_context)
     local failure_warnings=$(check_preemptive_failure "$goal")
-    local global_wisdom=$(grep -h '"type": "rule"' "$GLOBAL_KNOWLEDGE" 2>/dev/null | python3 -c "import json,sys; [print(f'- {json.loads(line).get(\"rule\")}') for line in sys.stdin]" 2>/dev/null)
+    local project_domains=$(detect_project_domain)
+    local rules=()
+    while IFS= read -r line; do
+      # Parse the JSON line
+      local rule_data
+      rule_data=$(echo "$line" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)))" 2>/dev/null)
+      if [ -z "$rule_data" ]; then
+        continue
+      fi
+      # Extract rule, priority, domains
+      local rule_text
+      rule_text=$(echo "$rule_data" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('rule', ''))")
+      local priority
+      priority=$(echo "$rule_data" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('priority', 0))")
+      local domains_json
+      domains_json=$(echo "$rule_data" | python3 -c "import json,sys; print(json.dumps(json.loads(sys.stdin.read()).get('domains', [])))" 2>/dev/null)
+      # Check if the rule applies to the project's domains
+      local match
+      match=$(echo "$domains_json" "$project_domains" | python3 -c "
+import sys, json
+data = sys.stdin.read().strip().split(' ', 1)
+if len(data) < 2:
+  sys.exit(0)
+domains_list = json.loads(data[0])
+proj_domains = data[1].split()
+if not domains_list:  # empty list means all domains
+  sys.exit(1)
+for d in proj_domains:
+  if d in domains_list:
+    sys.exit(1)
+sys.exit(0)
+      ")
+      if [ $? -eq 0 ]; then
+        # Domains match (or rule has no domain restriction)
+        rules+=("$priority|$rule_text")
+      fi
+    done < <(grep -h '"type": "rule"' "$GLOBAL_KNOWELDGE" 2>/dev/null)
+    # Sort by priority (descending) and then by rule text (for deterministic order)
+    local sorted_rules
+    sorted_rules=$(printf '%s\n' "${rules[@]}" | sort -t '|' -k1,1nr -k2,2 | cut -d'|' -f2-)
+    local global_wisdom
+    if [ -z "$sorted_rules" ]; then
+      global_wisdom=""
+    else
+      global_wisdom=$(printf '%s\n' "$sorted_rules" | sed 's/^/- /')
+    fi
 
     local prompt
     if [ "$mode" = "PATCH" ]; then

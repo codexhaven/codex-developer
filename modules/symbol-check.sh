@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# v12.2 Symbol Validator — Hardened
+# v12.3 Symbol Validator — Hardened
 # Cross-file validation: imports, exports, dead code, missing references
 set -euo pipefail
 

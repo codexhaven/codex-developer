@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# HEALER ANALYZE — Identify root cause and write to file
+set -euo pipefail
+
+SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+log_msg() { echo -e "\033[35m[HEALER]\033[0m $1"; }
+
+TRACE_FILE="${REPODIR}/.codex/healer_trace.txt"
+HEALER_ROOT_CAUSE_FILE="${REPODIR}/.codex/healer_root_cause.txt"
+
+# --- Step 2: Identify the root cause ---
+log_msg "Tracing root cause..."
+
+ROOT_CAUSE=$(hermes chat -q \
+  "Analyze this build failure trace. Identify the ROOT CAUSE — not the symptom, but the underlying issue. 
+Output format:
+ROOT_FILE: <single file that needs fixing>
+ROOT_ISSUE: <brief description>
+FIX_ACTION: <what to do>
+
+Trace:
+$(cat "$TRACE_FILE")" \
+  --yelo --quiet 2>/dev/null || echo "ROOT_FILE: unknown
+ROOT_ISSUE: Could not analyze
+FIX_ACTION: Retry the last failed file")
+
+ROOT_FILE=$(echo "$ROOT_CAUSE" | grep "ROOT_FILE:" | sed 's/ROOT_FILE:\s*//' | head -1 | xargs)
+ROOT_ISSUE=$(echo "$ROOT_CAUSE" | grep "ROOT_ISSUE:" | sed 's/ROOT_ISSUE:\s*//' | head -1)
+FIX_ACTION=$(echo "$ROOT_CAUSE" | grep "FIX_ACTION:" | sed 's/FIX_ACTION:\s*//' | head -1)
+
+log_msg "Root file: ${ROOT_FILE:-unknown}"
+log_msg "Issue: ${ROOT_ISSUE:-unknown}"
+log_msg "Action: ${FIX_ACTION:-retry}"
+
+# Write to file for the next step
+{
+  echo "ROOT_FILE=$ROOT_FILE"
+  echo "ROOT_ISSUE=$ROOT_ISSUE"
+  echo "FIX_ACTION=$FIX_ACTION"
+} > "$HEALER_ROOT_CAUSE_FILE"
+
+log_msg "Root cause written to $HEALER_ROOT_CAUSE_FILE"

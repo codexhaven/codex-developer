@@ -2,7 +2,7 @@
 name: codex-developer
 description: >
   Autonomous software factory (v12.3). Recon research, phase-gated builds,
-  DNA fingerprinting, self-healing, cross-reference validation, 64 rules.
+  DNA fingerprinting, self-healing, cross-reference validation, 76 rules.
 version: 12.3.0
 metadata:
   required_toolsets: [terminal, file, web]
@@ -19,7 +19,7 @@ metadata:
 
 ### runcycle.sh — Build Engine (497 lines)
 - Phase-gated build loop with automatic phase advancement
-- Global wisdom injection: 64 rules from global-knowledge.jsonl
+- Global wisdom injection: 76 rules from global-knowledge.jsonl
 - Brain memory injection from project_brain.md
 - Post-generation strengthening with cross-reference validation
 - DNA fingerprint injection (# ctx: codexhaven) on every file
@@ -70,7 +70,7 @@ metadata:
 - **Cross-Reference**: Strengthen pass validates imports against actual modules
 - **Phase Gate**: Complex projects build in ordered phases
 - **Self-Healing**: Root cause tracing, not blind retry
-- **Global Wisdom**: 64 accumulated rules in every prompt
+- **Global Wisdom**: 76 accumulated rules in every prompt
 - **Auto GitHub**: Every project pushed to github.com/codexhaven
 
 ## How to Request

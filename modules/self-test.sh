@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# v12.2 Self-Test Pipeline (Silent/Reporting mode)
+# v12.3 Self-Test Pipeline (Silent/Reporting mode)
 REPODIR="$(readlink -f "${1:-$HOME/projects}")"
 TEST_LOG="${REPODIR}/.codex/test_summary.log"
 
