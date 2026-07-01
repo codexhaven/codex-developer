@@ -171,6 +171,12 @@ for phase in data.get('phases', []):
   fi
 
   local entries=$(wc -l < "$REPODIR/.codex/build-queue.txt" 2>/dev/null || echo 0)
+
+  if [ "$entries" -eq 0 ] && [ -d "$REPODIR" ] && [ "$(find "$REPODIR" -name '*.py' | wc -l)" -gt 0 ]; then
+    echo "All specified files already exist. Use PATCH to modify existing files."
+    echo "Or use: listen.sh 'Continue' $REPODIR to resume from queue."
+    exit 0
+  fi
   echo "Plan: $entries files in phase order"
   [ "$entries" -gt 0 ] && cat "$REPODIR/.codex/build-queue.txt"
   [ "$entries" -eq 0 ] && { echo "No files in phases.json. Add 'files' arrays to each phase."; exit 1; }
@@ -274,6 +280,12 @@ mode_direct() {
   done
 
   local entries=$(wc -l < "$REPODIR/.codex/build-queue.txt" 2>/dev/null || echo 0)
+
+  if [ "$entries" -eq 0 ] && [ -d "$REPODIR" ] && [ "$(find "$REPODIR" -name '*.py' | wc -l)" -gt 0 ]; then
+    echo "All specified files already exist. Use PATCH to modify existing files."
+    echo "Or use: listen.sh 'Continue' $REPODIR to resume from queue."
+    exit 0
+  fi
   if [ "$entries" -eq 0 ]; then
     echo "All files exist. Nothing to build."
     exit 0
