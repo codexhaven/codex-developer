@@ -1,5 +1,26 @@
+# Large files
+core
+*.core
+
+# Backup files
+*.bak
+*.backup
+*.backup2
+*.save
+*.lockback
+*.mode_backup
+*.patch
+*.obs_backup
+*.obs2_backup
+*.obs3_backup
+*.perf_backup
+*.retri_backup
+
+# Python
 __pycache__/
 *.pyc
-.env
-*.log
-core
+*.pyo
+
+# Temp files
+*.tmp
+newblock*.txt
