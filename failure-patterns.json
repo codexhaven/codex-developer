@@ -1,0 +1,26 @@
+{
+  "patterns": {
+    "markdown-fence-leak": {
+      "detect": "```python",
+      "file_types": [".py"],
+      "rule": "NEVER output markdown code fences (```) inside code files. Write raw code only.",
+      "fix": "Strip all lines starting with ``` before saving file.",
+      "occurrences": 0
+    },
+    "package-absolute-import": {
+      "detect": "from backend.",
+      "file_types": [".py"],
+      "rule": "Use module-relative imports (from models import X), NOT package-absolute (from backend.models import X).",
+      "fix": "Replace 'from backend.X import Y' with 'from X import Y'.",
+      "occurrences": 0
+    },
+    "missing-encoding": {
+      "detect": "UnicodeDecodeError|encoding",
+      "file_types": [".py"],
+      "rule": "Always specify encoding when opening files: open(path, 'r', encoding='utf-8').",
+      "fix": "Add encoding='utf-8' to all open() calls.",
+      "occurrences": 0
+    }
+  },
+  "check_file": "python3 -c \"\nimport sys, json\npatterns = json.load(open('$HOME/.hermes/skills/codex-developer/failure-patterns.json'))\ncontent = open(sys.argv[1]).read()\nfor name, p in patterns['patterns'].items():\n    if p['detect'] in content:\n        print(f'WARN: Found pattern {name}: {p[\\\"rule\\\"][:100]}')\n\""
+}
