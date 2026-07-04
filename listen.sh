@@ -1,14 +1,14 @@
-#!/data/data/com.termux/files/usr/bin/env bash
+#!/usr/bin/env bash
 set -euo pipefail
 # ctx: codexhaven
 # =============================================================================
-# CODES-DEVELOPER v12.4 — Stress-tested — Natural Language Software Factory
+# CODES-DEVELOPER v12.5 — Stress-tested — Natural Language Software Factory
 # Modes: NEW | EXISTING | REVIEW | CONTINUATION | CHECK | DEPLOY
 # Flow: listen → recon (research + phases) → approve → runcycle (phase by phase)
 # =============================================================================
 
 [ -f "$HOME/.hermes/.env" ] && set -a && source "$HOME/.hermes/.env" && set +a 2>/dev/null || true
-SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && (pwd -P 2>/dev/null || pwd))"
 REPODIR=""
 REQUEST=""
 MODE=""
@@ -19,7 +19,7 @@ MODE=""
 understand() {
   local request="$1" project_dir="$2"
   echo -e "\033[1;36m==============================================\033[0m"
-  echo -e "\033[1;32m  CODES-DEVELOPER v12.4 — Stress-tested\033[0m"
+  echo -e "\033[1;32m  CODES-DEVELOPER v12.5 — Stress-tested\033[0m"
   echo -e "\033[1;36m==============================================\033[0m"
   echo -e "\033[1;33mRequest:\033[0m $request"
   echo ""

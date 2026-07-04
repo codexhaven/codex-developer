@@ -3,7 +3,7 @@ set -euo pipefail
 # ctx: codexhaven
 # Self-Update Engine — Analyzer → Proposal → Approval → Rule injection
 
-SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && (pwd -P 2>/dev/null || pwd))"
 GLOBAL_FILE="${SKILLDIR}/global-knowledge.jsonl"
 PROPOSALS_FILE="${SKILLDIR}/proposals.md"
 

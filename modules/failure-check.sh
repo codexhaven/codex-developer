@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ctx: codexhaven
-SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && (pwd -P 2>/dev/null || pwd))"
 check() {
   local filepath="$1"
   [[ -z "$filepath" ]] && return 1

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Codex Developer v12.4 — Install Script
+# Codex Developer v12.5 — Install Script
 set -euo pipefail
-# CODES-DEVELOPER v12.4 — Codex Developer
+# CODES-DEVELOPER v12.5 — Codex Developer
 # ctx: codexhaven
 
-echo "=== Codex Developer v12.4 Install ==="
+echo "=== Codex Developer v12.5 Install ==="
 
-SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && (pwd -P 2>/dev/null || pwd))"
 
 # Check dependencies
 command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 required"; exit 1; }

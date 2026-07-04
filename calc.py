@@ -1,9 +1,10 @@
+import sys
+# ctx: codexhaven
+
 def add(a, b):
     return a + b
 
 if __name__ == "__main__":
-    import sys
-    # ctx: codexhaven
     if len(sys.argv) == 3:
         try:
             a = float(sys.argv[1])
@@ -14,6 +15,7 @@ if __name__ == "__main__":
                 print(int(result))
             else:
                 print(result)
+            sys.exit(0)
         except ValueError:
             print("Error: Please provide two numbers")
             sys.exit(1)
@@ -27,7 +29,10 @@ if __name__ == "__main__":
                 print(int(result))
             else:
                 print(result)
+            sys.exit(0)
         except ValueError:
             print("Error: Please enter valid numbers")
+            sys.exit(1)
         except KeyboardInterrupt:
             print("\nExiting...")
+            sys.exit(0)

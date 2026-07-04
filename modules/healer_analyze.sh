@@ -3,7 +3,7 @@
 set -euo pipefail
 # ctx: codexhaven
 
-SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && (pwd -P 2>/dev/null || pwd))"
 log_msg() { echo -e "\033[35m[HEALER]\033[0m $1"; }
 
 TRACE_FILE="${REPODIR}/.codex/healer_trace.txt"
@@ -22,6 +22,13 @@ get_root_cause() {
     local output
     output=$(hermes chat -q \
 "Analyze this build failure trace. Identify the ROOT CAUSE — not the symptom, but the underlying issue. 
+Look for common patterns:
+- Circular imports in Python
+- Missing environment variables
+- Incorrect package versions
+- Shadowing standard library modules
+- Incorrect function signatures vs contract
+
 Output format:
 ROOT_FILE: <single file that needs fixing>
 ROOT_ISSUE: <brief description>

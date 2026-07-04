@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Mock hermes CLI
+# ctx: codexhaven
+
+case "$1" in
+    chat)
+        # Check for specific prompts to provide better mock responses
+        if echo "$@" | grep -q "Analyze this build failure trace"; then
+            echo "ROOT_FILE: main.py
+ROOT_ISSUE: Syntax error in imports
+FIX_ACTION: Fix the import statement"
+        elif echo "$@" | grep -q "Create a specification with phases.json"; then
+            echo '{"phases": [{"id": "phase-1", "name": "Initial", "files": ["hello.py"]}]}'
+        elif echo "$@" | grep -q "Generating build order"; then
+            echo "hello.py"
+        elif echo "$@" | grep -q "Design a complete, buildable architecture"; then
+            echo '{
+  "research": "Simple hello world script implementation.",
+  "modules": {
+    "hello.py": {
+      "description": "Prints hello world",
+      "exports": [
+        {"type": "function", "name": "say_hello", "params": [], "returns": "None", "command": "echo Hello World", "description": "Prints hello world"}
+      ],
+      "imports": []
+    }
+  },
+  "phases": [
+    {"id": "phase-1", "name": "Foundation", "description": "Create hello.py", "files": ["hello.py"]}
+  ]
+}'
+        else
+            echo "FILE: hello.py
+# ctx: codexhaven
+def say_hello():
+    print('Hello from mock hermes!')
+
+if __name__ == '__main__':
+    say_hello()
+"
+        fi
+        ;;
+    --version)
+        echo "hermes v1.0.0 (mock)"
+        ;;
+    *)
+        echo "Mock hermes received: $@"
+        ;;
+esac
+exit 0

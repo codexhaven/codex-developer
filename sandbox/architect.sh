@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # CODES-DEVELOPER v12.4 — Codex Developer
 # ctx: codexhaven
 # architect.sh v5 — Pass-through validator
