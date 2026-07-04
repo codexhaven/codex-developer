@@ -6,7 +6,7 @@ set -euo pipefail
 # ctx: codexhaven
 
 REPODIR="$(readlink -f "${1:-${REPODIR:-.}}")"
-SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && (pwd -P 2>/dev/null || pwd))"
 
 echo "[SYMBOL] Scanning $REPODIR..."
 

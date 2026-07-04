@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # ctx: codexhaven
-SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && (pwd -P 2>/dev/null || pwd))"
 detect() {
   local goal="$1"
   python3 -c "

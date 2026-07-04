@@ -1,9 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # strengthen.sh v2 — Multi-pass hardening + cross-ref + structure audit
 set -euo pipefail
 # ctx: codexhaven
 
-SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && (pwd -P 2>/dev/null || pwd))"
 
 strengthen_file() {
   local filepath="$1"

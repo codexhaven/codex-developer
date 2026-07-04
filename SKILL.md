@@ -1,10 +1,10 @@
 ---
 name: codex-developer
 description: >
-  Autonomous software factory (v12.4). Domain-aware recon research, phase-gated builds,
+  Autonomous software factory (v12.5). Domain-aware recon research, phase-gated builds,
   DNA fingerprinting, 4-step self-healing, cross-reference validation, contract enforcement,
   76 global rules, auto GitHub push, stack plugin system.
-version: 12.4.0
+version: 12.5.0
 metadata:
   required_toolsets: [terminal, file, web]
   platforms: [linux, macos, android-termux]
@@ -16,6 +16,7 @@ metadata:
 ### listen.sh -- Entry Point (500+ lines)
 - Natural language request parsing with 8-mode detection
 - Mode detection: NEW | GENERATE | EXISTING | DIRECT | REVIEW | CONTINUATION | CHECK | DEPLOY
+- Platform-agnostic (Ubuntu/macOS/Android) with dynamic path detection
 - Automatic capability matching against project capabilities.json
 - GitHub push integration after successful builds
 - Unfinished build detection and resume prompts

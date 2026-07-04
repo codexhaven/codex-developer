@@ -2,12 +2,12 @@
 set -euo pipefail
 # ctx: codexhaven
 # =============================================================================
-# CODES-DEVELOPER v12.4 — Hardened Build Engine
+# CODES-DEVELOPER v12.5 — Hardened Build Engine
 # Pre-build intelligence + root cause healer + method adaptation
 # Phase Gate + Brain Memory + Full Context Reader + Multi-pass Strengthen
 # =============================================================================
 
-SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && (pwd -P 2>/dev/null || pwd))"
 REPODIR="${CODEX_REPO:-${HOME}/projects}"
 GOALFILE="${REPODIR}/.codex/goal.md"
 STATEFILE="${REPODIR}/.codex/state.json"
@@ -29,15 +29,15 @@ release_lock() { flock -u 9 2>/dev/null; rm -f "$LOCKFILE" 2>/dev/null; }
 log() {
   local msg="$*" color="" icon=""
   case "$msg" in
-    *FAIL*|*ERROR*) color="\\033[1;31m"; icon="✗" ;;
-    *SUCCESS*|*BUILT*|*PASS*) color="\\033[1;32m"; icon="✓" ;;
-    *WARN*) color="\\033[1;33m"; icon="⚠" ;;
-    *CYCLE*|*PLANNING*) color="\\033[1;36m"; icon="▶" ;;
-    *DONE*) color="\\033[1;32m"; icon="★" ;;
-    *VERIFY*) color="\\033[0;36m"; icon="🔍" ;;
-    *) color="\\033[0;37m"; icon="·" ;;
+    *FAIL*|*ERROR*) color="\033[1;31m"; icon="✗" ;;
+    *SUCCESS*|*BUILT*|*PASS*) color="\033[1;32m"; icon="✓" ;;
+    *WARN*) color="\033[1;33m"; icon="⚠" ;;
+    *CYCLE*|*PLANNING*) color="\033[1;36m"; icon="▶" ;;
+    *DONE*) color="\033[1;32m"; icon="★" ;;
+    *VERIFY*) color="\033[0;36m"; icon="🔍" ;;
+    *) color="\033[0;37m"; icon="·" ;;
   esac
-  echo -e "${color}[${icon}] ${msg}\\[0m"
+  echo -e "${color}[${icon}] ${msg}\033[0m"
 }
 
 
@@ -75,9 +75,9 @@ parse_entry() {
   [[ "$entry" =~ ^(NEW|PATCH):[[:space:]]*$ ]] && { echo "MODE=SKIP FILE= DESC="; return; }
   local clean_entry="${entry#NEW: }"
   clean_entry="${clean_entry#PATCH: }"
-  if [[ "$entry" =~ ^PATCH:[[:space:]]+([^[:space:]].*)[[:space:]]-[[:space:]](.*) ]]; then
+  if [[ "$entry" =~ ^PATCH:[[:space:]]*([^[:space:]].*)[[:space:]]-[[:space:]](.*) ]]; then
     echo "MODE=PATCH FILE=${BASH_REMATCH[1]} DESC=${BASH_REMATCH[2]}"
-  elif [[ "$entry" =~ ^NEW:[[:space:]]+(.+) ]]; then
+  elif [[ "$entry" =~ ^NEW:[[:space:]]*(.+) ]]; then
     echo "MODE=NEW FILE=${BASH_REMATCH[1]} DESC="
   else
     echo "MODE=NEW FILE=$entry DESC="
@@ -164,6 +164,18 @@ detect_project_domain() {
   # Check for .NET
   if find "$REPODIR" -maxdepth 2 -name "*.csproj" -o -name "*.vbproj" -o -name "*.fsproj" | grep -q .; then
     domains+=("dotnet")
+  fi
+  # Check for React/Next.js
+  if grep -q '"react"' "$REPODIR/package.json" 2>/dev/null; then
+    domains+=("react")
+  fi
+  # Check for Tailwind
+  if [ -f "$REPODIR/tailwind.config.js" ] || [ -f "$REPODIR/tailwind.config.ts" ]; then
+    domains+=("tailwind")
+  fi
+  # Check for FastAPI
+  if grep -qi "fastapi" "$REPODIR/requirements.txt" "$REPODIR/pyproject.toml" 2>/dev/null; then
+    domains+=("fastapi")
   fi
   # Check for C/C++ (Makefile)
   if [ -f "$REPODIR/Makefile" ] || [ -f "$REPODIR/gnumakefile" ] || [ -f "$REPODIR/Makefile.am" ]; then
@@ -306,7 +318,9 @@ for mod_path in contract.get(\"modules\", {}).keys():
 
   mkdir -p "$(dirname "$fp")"
   printf '%s' "$content" > "$fp"
-  bash ~/.hermes/skills/codex-developer/add_path_header.sh "$fp"
+  if [ -f "${SKILLDIR}/add_path_header.sh" ]; then
+    bash "${SKILLDIR}/add_path_header.sh" "$fp"
+  fi
     # Inject Python path header for import resolution
     if [[ "$fp" == *.py ]]; then
       if ! grep -q "sys.path.insert" "$fp" 2>/dev/null; then
@@ -455,8 +469,8 @@ main() {
   [ -f "${SKILLDIR}/modules/vanillastack/apply.sh" ] && bash "${SKILLDIR}/modules/vanillastack/apply.sh" 2>/dev/null || true
   [ -f "${SKILLDIR}/modules/gitignore-init.sh" ] && bash "${SKILLDIR}/modules/gitignore-init.sh" 2>/dev/null || true
 
-  obs_log "Starting build loop with max_cycles=$max_cycles"
   local max_cycles=50  # Higher ceiling, but will exit early when queue is empty
+  obs_log "Starting build loop with max_cycles=$max_cycles"
   while [ $max_cycles -gt 0 ]; do
     max_cycles=$((max_cycles - 1))
 
@@ -498,8 +512,8 @@ main() {
     fi
 
     local parsed=$(parse_entry "$entry")
-    local mode=$(echo "$parsed" | sed "s/MODE=//;s/ .*//")
-    local current=$(echo "$parsed" | sed "s/.*FILE=//;s/ .*//")
+    local mode=$(echo "$parsed" | sed -E 's/MODE=([^ ]+) .*/\1/')
+    local current=$(echo "$parsed" | sed -E 's/.*FILE=([^ ]+) .*/\1/')
     current="${current#NEW: }"; current="${current#NEW:}"
     current="${current#PATCH: }"; current="${current#PATCH:}"
     current="${current#/}"
@@ -527,7 +541,10 @@ main() {
     log "CYCLE $cycle | $mode: $current"
 
     local built=$(get_built_context "$mode" "$current")
-    local context_map=$(get_project_context)
+    local context_map=""
+    if [ -f "${SKILLDIR}/modules/map_project.py" ]; then
+      context_map=$(python3 "${SKILLDIR}/modules/map_project.py" "$REPODIR" 2>/dev/null || echo "")
+    fi
     local failure_warnings=$(check_preemptive_failure "$goal")
     local project_domains=$(detect_project_domain)
     local rules=()
@@ -546,8 +563,7 @@ main() {
       local domains_json
       domains_json=$(echo "$rule_data" | python3 -c "import json,sys; print(json.dumps(json.loads(sys.stdin.read()).get('domains', [])))" 2>/dev/null)
       # Check if the rule applies to the project's domains
-      local match
-      match=$(echo "$domains_json" "$project_domains" | python3 -c "
+      if ! echo "$domains_json" "$project_domains" | python3 -c "
 import sys, json
 data = sys.stdin.read().strip().split(' ', 1)
 if len(data) < 2:
@@ -560,15 +576,16 @@ for d in proj_domains:
   if d in domains_list:
     sys.exit(1)
 sys.exit(0)
-      ")
-      if [ $? -eq 0 ]; then
+      " 2>/dev/null; then
         # Domains match (or rule has no domain restriction)
         rules+=("$priority|$rule_text")
       fi
     done < <(grep -h '"type": "rule"' "$GLOBAL_KNOWLEDGE" 2>/dev/null)
     # Sort by priority (descending) and then by rule text (for deterministic order)
-    local sorted_rules
-    sorted_rules=$(printf '%s\n' "${rules[@]}" | sort -t '|' -k1,1nr -k2,2 | cut -d'|' -f2-)
+    local sorted_rules=""
+    if [ ${#rules[@]} -gt 0 ]; then
+      sorted_rules=$(printf '%s\n' "${rules[@]}" | sort -t '|' -k1,1nr -k2,2 | cut -d'|' -f2-)
+    fi
     local global_wisdom
     if [ -z "$sorted_rules" ]; then
       global_wisdom=""
@@ -611,7 +628,6 @@ sys.exit(0)
         obs_log "Engaging healer due to repeated failures (about to run)"
         log "[ERROR] Threshold reached. Engaging HEALER."
         bash "${SKILLDIR}/modules/healer.sh"
-        obs_log "Engaging healer due to repeated failures after build failure"
         FAILURE_COUNT=0
       fi
       continue

@@ -3,7 +3,7 @@
 set -euo pipefail
 # ctx: codexhaven
 
-SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && (pwd -P 2>/dev/null || pwd))"
 log_msg() { echo -e "\033[35m[HEALER]\033[0m $1"; }
 
 TRACE_FILE="${REPODIR}/.codex/healer_trace.txt"

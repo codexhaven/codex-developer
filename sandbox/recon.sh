@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # CODES-DEVELOPER v12.4 — Codex Developer
 # ctx: codexhaven
 # recon.sh v8 — Domain-aware whole-house mapping

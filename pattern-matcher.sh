@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ctx: codexhaven
 # Pattern Matcher — Finds reusable code before generating new code
-SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && (pwd -P 2>/dev/null || pwd))"
 PATTERNSFILE="${SKILLDIR}/patterns.json"
 
 # Given a file purpose from the build plan, find matching patterns
