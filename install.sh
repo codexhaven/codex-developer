@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Codex Developer v12.5 — Install Script
+# Codex Developer v12.6 — Install Script
 set -euo pipefail
-# CODES-DEVELOPER v12.5 — Codex Developer
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
 
-echo "=== Codex Developer v12.5 Install ==="
+echo "=== Codex Developer v12.6 Install ==="
 
 SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && (pwd -P 2>/dev/null || pwd))"
 

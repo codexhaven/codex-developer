@@ -53,5 +53,18 @@
       "tests/test_api.py",
       "README.md"
     ]
+  },
+  "react-next-app": {
+    "keywords": ["react", "nextjs", "next.js", "frontend", "typescript", "tailwind", "web app", "ui", "ux"],
+    "template": [
+      "package.json",
+      "tsconfig.json",
+      "tailwind.config.ts",
+      "app/layout.tsx",
+      "app/page.tsx",
+      "components/ui/button.tsx",
+      "lib/utils.ts",
+      "README.md"
+    ]
   }
 }
