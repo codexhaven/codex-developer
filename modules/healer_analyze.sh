@@ -19,8 +19,26 @@ get_root_cause() {
   local attempt=1
   local max_attempts=3
   while [ $attempt -le $max_attempts ]; do
-    local output
-    output=$(hermes chat -q \
+    local output=""
+    if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+      output=$(python3 "${SKILLDIR}/modules/direct-api.py" "Analyze this build failure trace. Identify the ROOT CAUSE — not the symptom, but the underlying issue.
+Look for common patterns:
+- Circular imports in Python
+- Missing environment variables
+- Incorrect package versions
+- Shadowing standard library modules
+- Incorrect function signatures vs contract
+
+Output format:
+ROOT_FILE: <single file that needs fixing>
+ROOT_ISSUE: <brief description>
+FIX_ACTION: <what to do>
+
+Trace:
+$trace_content" 2>/dev/null || echo "")
+    fi
+
+    [ -z "$output" ] && output=$(hermes chat -q \
 "Analyze this build failure trace. Identify the ROOT CAUSE — not the symptom, but the underlying issue. 
 Look for common patterns:
 - Circular imports in Python

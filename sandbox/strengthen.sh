@@ -100,8 +100,11 @@ Review this file for production readiness. Identify and fix:
 Apply improvements directly. Do NOT rewrite from scratch. Keep existing logic.
 Output format: FILE: $filepath followed by COMPLETE strengthened file contents."
 
-  local output
-  output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
+  local output=""
+  if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+    output=$(python3 "${SKILLDIR}/modules/direct-api.py" "$prompt" 2>/dev/null || echo "")
+  fi
+  [ -z "$output" ] && output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
 
   # --- Pass 2: If first pass found issues, verify and re-strengthen ---
   local pass=1
@@ -109,7 +112,12 @@ Output format: FILE: $filepath followed by COMPLETE strengthened file contents."
     if [ -z "$output" ] || ! echo "$output" | grep -q "FILE:"; then
       [ $pass -eq 1 ] && log "STRENGTHEN: No output on pass $pass — retrying with simpler prompt..."
       # Simpler retry
-      output=$(hermes chat -q "## MODE: STRENGTHEN $filepath\n## Fix edge cases, error handling, docs, import mismatches.\n## Output: FILE: $filepath\n\n$file_content" --yolo --quiet 2>/dev/null || echo "")
+      local simple_prompt="## MODE: STRENGTHEN $filepath\n## Fix edge cases, error handling, docs, import mismatches.\n## Output: FILE: $filepath\n\n$file_content"
+      output=""
+      if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+        output=$(python3 "${SKILLDIR}/modules/direct-api.py" "$simple_prompt" 2>/dev/null || echo "")
+      fi
+      [ -z "$output" ] && output=$(hermes chat -q "$simple_prompt" --yolo --quiet 2>/dev/null || echo "")
       pass=$((pass + 1))
       continue
     fi

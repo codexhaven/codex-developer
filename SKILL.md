@@ -1,7 +1,7 @@
 ---
 name: codex-developer
 description: >
-  Autonomous software factory (v12.5). Domain-aware recon research, phase-gated builds,
+  Autonomous software factory (v12.6). Domain-aware recon research, phase-gated builds,
   DNA fingerprinting, 4-step self-healing, cross-reference validation, contract enforcement,
   76 global rules, auto GitHub push, stack plugin system.
 version: 12.5.0

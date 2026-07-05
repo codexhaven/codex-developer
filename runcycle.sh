@@ -2,7 +2,7 @@
 set -euo pipefail
 # ctx: codexhaven
 # =============================================================================
-# CODES-DEVELOPER v12.5 — Hardened Build Engine
+# CODES-DEVELOPER v12.6 — Hardened Build Engine
 # Pre-build intelligence + root cause healer + method adaptation
 # Phase Gate + Brain Memory + Full Context Reader + Multi-pass Strengthen
 # =============================================================================
@@ -45,6 +45,17 @@ log() {
 obs_log() {
   local msg="$1"
   echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $msg" >> "$OBSERVABILITY_LOG"
+}
+
+# --- Pre-flight Model Audit ---
+pre_flight_model_audit() {
+  log "AUDIT: Checking data models..."
+  local models_found=$(find "$REPODIR" -type f -name "*.py" -exec grep -lE "class.*BaseModel|class.*\(db.Model\)" {} + 2>/dev/null | wc -l)
+  if [ "$models_found" -gt 0 ]; then
+    log "AUDIT: $models_found model files detected. Building logic on firm foundation."
+  else
+    log "WARN: No data models found. If this is a data app, ensure models are built in Phase 1."
+  fi
 }
 # --- Modules ---
 
@@ -245,14 +256,22 @@ build_file() {
 
     [ -f "$REPODIR/.codex/project_brain.md" ] && prompt="## MASTER BRAIN CONTEXT"$'\n'"$(cat "$REPODIR/.codex/project_brain.md")"$'\n\n'"$prompt"
 
-    local output
-    output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
+    local output=""
+    if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+      output=$(python3 "${SKILLDIR}/modules/direct-api.py" "$prompt" 2>/dev/null || echo "")
+    fi
+    [ -z "$output" ] && output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
 
     if [ -z "$output" ] || ! echo "$output" | grep -q "FILE:"; then
       log "WARN: Empty output — adapting strategy..."
       if [ -f "${SKILLDIR}/modules/method-adapter.sh" ]; then
         local adapted=$(bash "${SKILLDIR}/modules/method-adapter.sh" "$filepath" "$goal" "$mode" "$attempt" 2>/dev/null || echo "")
-        [ -n "$adapted" ] && output=$(hermes chat -q "$adapted" --yolo --quiet 2>/dev/null || echo "")
+        [ -n "$adapted" ] && {
+          if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+            output=$(python3 "${SKILLDIR}/modules/direct-api.py" "$adapted" 2>/dev/null || echo "")
+          fi
+          [ -z "$output" ] && output=$(hermes chat -q "$adapted" --yolo --quiet 2>/dev/null || echo "")
+        }
       fi
     fi
 
@@ -403,8 +422,11 @@ generate_queue() {
   log "PLANNING: Generating build order..."
   local subdirs=$(find "$REPODIR" -maxdepth 2 -type d -not -path "*/.*" | grep -v "$REPODIR" | sed "s|$REPODIR/||")
   local prompt="## GOAL"$'\n'"$goal"$'\n\n'"## EXISTING DIRECTORIES"$'\n'"$(echo "$subdirs" | sed 's/^/- /')"$'\n\n'"## INSTRUCTIONS: List files in dependency order. Output ONLY file paths. No markdown."
-  local output
-  output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
+  local output=""
+  if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+    output=$(python3 "${SKILLDIR}/modules/direct-api.py" "$prompt" 2>/dev/null || echo "")
+  fi
+  [ -z "$output" ] && output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
   [ -z "$output" ] && { log "FAIL: No plan."; return 1; }
   echo "$output" | grep -E '\.(py|js|ts|tsx|jsx|html|css|md|txt|json|yml|yaml|sh|toml|example|gitignore)' > "$QUEUEFILE" || true
   local count=$(wc -l < "$QUEUEFILE" 2>/dev/null || echo 0)
@@ -465,6 +487,7 @@ main() {
 
   # Apply stack modules if they exist
   [ -f "${SKILLDIR}/modules/vibestack/apply.sh" ] && bash "${SKILLDIR}/modules/vibestack/apply.sh" 2>/dev/null || true
+  [ -f "${SKILLDIR}/modules/reactstack/apply.sh" ] && bash "${SKILLDIR}/modules/reactstack/apply.sh" 2>/dev/null || true
   [ -f "${SKILLDIR}/modules/flaskstack/apply.sh" ] && bash "${SKILLDIR}/modules/flaskstack/apply.sh" 2>/dev/null || true
   [ -f "${SKILLDIR}/modules/vanillastack/apply.sh" ] && bash "${SKILLDIR}/modules/vanillastack/apply.sh" 2>/dev/null || true
   [ -f "${SKILLDIR}/modules/gitignore-init.sh" ] && bash "${SKILLDIR}/modules/gitignore-init.sh" 2>/dev/null || true
@@ -477,6 +500,11 @@ main() {
     # Validate dependency order before building
     if type validate_dependency_order >/dev/null 2>&1; then
       validate_dependency_order
+    fi
+
+    # Pre-flight audit for models every 10 cycles
+    if [ $((max_cycles % 10)) -eq 0 ]; then
+      pre_flight_model_audit
     fi
 
     if [ ! -s "$QUEUEFILE" ]; then
@@ -602,8 +630,11 @@ sys.exit(0)
 
     [ -f "$REPODIR/.codex/project_brain.md" ] && prompt="## MASTER BRAIN CONTEXT"$'\n'"$(cat "$REPODIR/.codex/project_brain.md")"$'\n\n'"$prompt"
 
-    local output
-    output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
+    local output=""
+    if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+      output=$(python3 "${SKILLDIR}/modules/direct-api.py" "$prompt" 2>/dev/null || echo "")
+    fi
+    [ -z "$output" ] && output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
 
     # Try patch fallback for large files
     if [ -z "$output" ] && [ "$mode" = "PATCH" ] && [ -f "$REPODIR/$current" ]; then
@@ -682,12 +713,21 @@ if '$applied' in data.get('modules', {}):
       log "Syntax failure in $applied. Initiating Adversarial Healing..."
       local err_log=$(cat "${REPODIR}/.codex/last_error.log" 2>/dev/null || echo "Unknown syntax error")
       local fix_prompt="## MODE: FIX SYNTAX ERROR"$'\n'"## TARGET FILE: $applied"$'\n'"## ERROR: $err_log"$'\n'"## INSTRUCTIONS: Fix the syntax error. Do not change logic. If the error is a ModuleNotFoundError about a stdlib module, the filename is shadowing Python'\'s standard library — rename the file to avoid the collision (e.g. collections.py -> collections_handler.py)."
-      output=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
+      output=""
+      if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+        output=$(python3 "${SKILLDIR}/modules/direct-api.py" "$fix_prompt" 2>/dev/null || echo "")
+      fi
+      [ -z "$output" ] && output=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
+
       if ! echo "$output" | grep -q "FILE:"; then
         log "Level 1 fix failed. Pivoting to Structural Healing..."
         local map=$(python3 "${SKILLDIR}/modules/map_project.py" 2>/dev/null || echo "")
         fix_prompt="## MODE: STRUCTURAL HEALING"$'\n'"## TARGET FILE: $applied"$'\n'"## PROJECT MAP: $map"$'\n'"## ERROR: $err_log"$'\n'"## INSTRUCTIONS: Re-align imports with the Project Map above."
-        output=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
+        output=""
+        if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+          output=$(python3 "${SKILLDIR}/modules/direct-api.py" "$fix_prompt" 2>/dev/null || echo "")
+        fi
+        [ -z "$output" ] && output=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
       fi
       if echo "$output" | grep -q "FILE:"; then
         apply_file "$output"
