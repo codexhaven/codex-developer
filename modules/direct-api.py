@@ -3,6 +3,7 @@
 import os
 import json
 import sys
+import time
 import urllib.request
 import urllib.error
 
@@ -27,24 +28,60 @@ def call_api(prompt, system_prompt=None, temperature=0.2, max_tokens=4000):
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
 
-    data = {
-        "model": "google/gemini-2.0-flash-lite-preview-02-05:free",
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens
-    }
+    # Try multiple free models — some are rate-limited, fall back to next
+    models = [
+        "qwen/qwen3-next-80b-a3b-instruct:free",
+        "openai/gpt-oss-120b:free",
+        "google/gemma-4-31b-it:free",
+        "nvidia/nemotron-3-super-120b-a12b:free",
+        "nvidia/nemotron-nano-9b-v2:free",
+    ]
 
-    req = urllib.request.Request(url, data=json.dumps(data).encode("utf-8"), headers=headers)
-    try:
-        with urllib.request.urlopen(req) as response:
-            res_data = json.loads(response.read().decode("utf-8"))
-            return res_data["choices"][0]["message"]["content"]
-    except urllib.error.URLError as e:
-        print(f"API Error: {e}", file=sys.stderr)
-        return None
-    except (KeyError, IndexError) as e:
-        print(f"Response Parsing Error: {e}", file=sys.stderr)
-        return None
+    for model in models:
+        data = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(data).encode("utf-8"),
+            headers=headers
+        )
+
+        # Retry each model up to 2 times with backoff
+        for attempt in range(2):
+            try:
+                with urllib.request.urlopen(req, timeout=120) as response:
+                    res_data = json.loads(response.read().decode("utf-8"))
+                    content = res_data["choices"][0]["message"]["content"]
+                    if content and len(content.strip()) > 0:
+                        print(f"[API] Used model: {model}", file=sys.stderr)
+                        return content
+            except urllib.error.HTTPError as e:
+                if e.code == 429:
+                    print(f"[API] {model}: Rate limited (429), attempt {attempt+1}/2", file=sys.stderr)
+                    if attempt == 0:
+                        time.sleep(5)  # Wait 5s before retry
+                    continue
+                elif e.code == 400:
+                    body = e.read().decode("utf-8", errors="replace")
+                    print(f"[API] {model}: Bad request (400): {body[:200]}", file=sys.stderr)
+                    break  # Don't retry 400s, try next model
+                else:
+                    print(f"[API] {model}: HTTP {e.code}", file=sys.stderr)
+                    break
+            except urllib.error.URLError as e:
+                print(f"[API] {model}: URL Error: {e}", file=sys.stderr)
+                break
+            except (KeyError, IndexError) as e:
+                print(f"[API] {model}: Parse Error: {e}", file=sys.stderr)
+                break
+
+    print("[API] All models failed", file=sys.stderr)
+    return None
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
