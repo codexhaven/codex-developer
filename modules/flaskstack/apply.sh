@@ -2,7 +2,7 @@
 # FlaskStack Plugin — Assists Python web projects (Flask, Django, FastAPI)
 # Steps aside if not a Python web project
 set -euo pipefail
-# CODES-DEVELOPER v12.4 — Codex Developer
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
 
 GOALFILE="${REPODIR}/.codex/goal.md"

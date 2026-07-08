@@ -1,14 +1,14 @@
-#!/data/data/com.termux/files/usr/bin/env bash
+#!/usr/bin/env bash
 set -euo pipefail
 # ctx: codexhaven
 # =============================================================================
-# CODES-DEVELOPER v12.4 — Stress-tested — Natural Language Software Factory
+# CODES-DEVELOPER v12.6 — Stress-tested — Natural Language Software Factory
 # Modes: NEW | EXISTING | REVIEW | CONTINUATION | CHECK | DEPLOY
 # Flow: listen → recon (research + phases) → approve → runcycle (phase by phase)
 # =============================================================================
 
 [ -f "$HOME/.hermes/.env" ] && set -a && source "$HOME/.hermes/.env" && set +a 2>/dev/null || true
-SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && (pwd -P 2>/dev/null || pwd))"
 REPODIR=""
 REQUEST=""
 MODE=""
@@ -19,7 +19,7 @@ MODE=""
 understand() {
   local request="$1" project_dir="$2"
   echo -e "\033[1;36m==============================================\033[0m"
-  echo -e "\033[1;32m  CODES-DEVELOPER v12.4 — Stress-tested\033[0m"
+  echo -e "\033[1;32m  CODES-DEVELOPER v12.6 — Stress-tested\033[0m"
   echo -e "\033[1;36m==============================================\033[0m"
   echo -e "\033[1;33mRequest:\033[0m $request"
   echo ""
@@ -122,7 +122,12 @@ for i, p in enumerate(data.get('phases', [])):
   fi
   else
     echo "[RECON] No phases.json produced. Falling back to direct spec generation..."
-    local spec=$(hermes chat -q "Create a specification with phases.json containing 'files' arrays for: $REQUEST. Output the spec and a valid JSON phases block." --yolo --quiet 2>/dev/null || echo "")
+    local spec_prompt="Create a specification with phases.json containing 'files' arrays for: $REQUEST. Output the spec and a valid JSON phases block."
+    local spec=""
+    if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+      spec=$(python3 "${SKILLDIR}/modules/direct-api.py" "$spec_prompt" 2>/dev/null || echo "")
+    fi
+    [ -z "$spec" ] && spec=$(hermes chat -q "$spec_prompt" --yolo --quiet 2>/dev/null || echo "")
     if [ -z "$spec" ]; then
       echo "ERROR: Both recon and fallback failed."
       exit 1
@@ -370,7 +375,12 @@ mode_review() {
     [ -f "$REPODIR/$review_file" ] && { echo "  Already reviewed."; continue; }
     local content=$(cat "$file" 2>/dev/null)
     [ -z "$content" ] && { echo "  Empty."; continue; }
-    local review=$(hermes chat -q "Review this file. Output findings as: Finding | Risk: level | Fix: action\nFile: $rel\n\n$content" --yolo --quiet 2>/dev/null || echo "")
+    local review_prompt="Review this file. Output findings as: Finding | Risk: level | Fix: action\nFile: $rel\n\n$content"
+    local review=""
+    if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+      review=$(python3 "${SKILLDIR}/modules/direct-api.py" "$review_prompt" 2>/dev/null || echo "")
+    fi
+    [ -z "$review" ] && review=$(hermes chat -q "$review_prompt" --yolo --quiet 2>/dev/null || echo "")
     [ -n "$review" ] && { echo "$review" > "$REPODIR/$review_file"; echo "  Saved."; }
   done <<< "$files"
 

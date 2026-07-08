@@ -1,7 +1,7 @@
 import os
 import re
 import sys
-"""Codex Developer v12.4 — Generated module."""
+"""Codex Developer v12.6 — Generated module."""
 # ctx: codexhaven
 
 def scan_deps(file_path, repo_dir, queue_file):

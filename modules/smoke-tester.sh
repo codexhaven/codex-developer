@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# CODES-DEVELOPER v12.4 — Codex Developer
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
-# v12.4 Smoke Tester
+# v12.6 Smoke Tester
 REPODIR="$(readlink -f "${1:-$HOME/projects}")"  # Default to projects directory in home (Termux-friendly)
 echo "[SMOKE] Auditing ${REPODIR}..."
 # Perform basic connectivity/lint audit

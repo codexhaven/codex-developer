@@ -2,14 +2,14 @@
 set -euo pipefail
 # ctx: codexhaven
 # =============================================================================
-# CODES-DEVELOPER v12.4 — Stress-tested — Build Engine
+# CODES-DEVELOPER v12.6 — Stress-tested — Build Engine
 # Modes: NEW | PATCH (SED fallback for large files)
 # Guardrails: Self-protection, path containment, syntax verification, rollback
 # Phase Gate: check_module_permission + advance_phase_if_complete
 # Brain Memory: project_brain.md injected into every prompt
 # =============================================================================
 
-SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && (pwd -P 2>/dev/null || pwd))"
 REPODIR="${CODEX_REPO:-${HOME}/projects}"
 GOALFILE="${REPODIR}/.codex/goal.md"
 STATEFILE="${REPODIR}/.codex/state.json"

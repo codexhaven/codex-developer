@@ -22,5 +22,5 @@
       "occurrences": 0
     }
   },
-  "check_file": "python3 -c \"\nimport sys, json\npatterns = json.load(open('$HOME/.hermes/skills/codex-developer/failure-patterns.json'))\ncontent = open(sys.argv[1]).read()\nfor name, p in patterns['patterns'].items():\n    if p['detect'] in content:\n        print(f'WARN: Found pattern {name}: {p[\\\"rule\\\"][:100]}')\n\""
+  "check_file": "python3 -c \"\nimport sys, json\npatterns = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "failure-patterns.json")))\ncontent = open(sys.argv[1]).read()\nfor name, p in patterns['patterns'].items():\n    if p['detect'] in content:\n        print(f'WARN: Found pattern {name}: {p[\\\"rule\\\"][:100]}')\n\""
 }

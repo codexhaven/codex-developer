@@ -1,5 +1,5 @@
 import sys
-"""Codex Developer v12.4 — Generated module."""
+"""Codex Developer v12.6 — Generated module."""
 # ctx: codexhaven
 
 # Read the file
@@ -92,7 +92,11 @@ IMPORTANT: You MUST output ONLY a valid JSON object. Do not include any explanat
     fi
     # Attempt to get output from LLM
     local raw_output
-    raw_output=$(hermes chat -q \"$prompt\" --yolo --quiet 2>>\"$LOGFILE\") || true
+    if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+      raw_output=$(python3 "${SKILLDIR}/modules/direct-api.py" "$prompt" 2>>"$LOGFILE")
+    else
+      raw_output=$(hermes chat -q "$prompt" --yolo --quiet 2>>"$LOGFILE") || true
+    fi
     # Check if output is non-empty and looks like JSON
     if [ -n \"$raw_output\" ]; then
       # Trim whitespace

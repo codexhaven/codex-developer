@@ -1,4 +1,4 @@
-# Codex Developer v12.4
+# Codex Developer v12.6
 
 > Autonomous software factory. Builds complete projects from natural language -- researched, phase-planned, DNA-signed, and pushed to GitHub.
 
@@ -155,7 +155,13 @@ rm -f /tmp/codex-developer.lock ~/tmp-codex-developer.lock
 
 ## Changelog
 
-### v12.4 (2026-07-02)
+### v12.6 (2026-07-04)
+- Portability: Updated shebangs to `#!/usr/bin/env bash` and implemented dynamic `SKILLDIR` detection.
+- Reliability: Fixed several build engine bugs (unbound variables, missing functions, regex issues).
+- Improvements: Expanded project domain detection and enhanced healer's root cause analysis.
+- Documentation: Updated SKILL.md and added a verification test suite for the core calculator.
+
+### v12.5 (2026-07-02)
 - Fixed all CRITICAL bugs (typo in GLOBAL_KNOWLEDGE, double increment, unclosed loop, syntax error)
 - Added DNA fingerprints to all 45+ files that were missing them
 - Removed duplicate code and artifact files

@@ -1,11 +1,12 @@
-#!/bin/bash
-# CODES-DEVELOPER v12.4 — Codex Developer
+#!/usr/bin/env bash
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
 # recon.sh v8 — Domain-aware whole-house mapping
 # Researches domain BEFORE designing architecture
 
 recon_main() {
   REPODIR="${1:-${REPODIR:-${CODEX_REPO:-}}}"
+  SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && (pwd -P 2>/dev/null || pwd))"
   GOALFILE="${REPODIR}/.codex/goal.md"
   CONTRACTFILE="${REPODIR}/.codex/contract.json"
   PHASESFILE="${REPODIR}/.codex/phases.json"
@@ -20,11 +21,15 @@ recon_main() {
 
   # STEP 0: Domain research — understand the real world before designing
   set +euo pipefail 2>/dev/null
-  DOMAIN_CONTEXT=$(hermes chat -q \
-"Research this domain thoroughly. What does this organization/industry ACTUALLY do day-to-day? What are their real workflows, pain points, regulations, money flows, compliance needs, stakeholders, and terminology? Be specific with names, processes, and real operations. Output a dense summary of key domain knowledge needed to build genuinely useful software for them — not generic CRUD.
+  local domain_prompt="Research this domain thoroughly. What does this organization/industry ACTUALLY do day-to-day? What are their real workflows, pain points, regulations, money flows, compliance needs, stakeholders, and terminology? Be specific with names, processes, and real operations. Output a dense summary of key domain knowledge needed to build genuinely useful software for them — not generic CRUD.
 
 ## PROJECT REQUEST
-$GOAL" --yolo --quiet 2>/dev/null || echo "")
+$GOAL"
+  DOMAIN_CONTEXT=""
+  if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+    DOMAIN_CONTEXT=$(python3 "${SKILLDIR}/modules/direct-api.py" "$domain_prompt" 2>/dev/null || echo "")
+  fi
+  [ -z "$DOMAIN_CONTEXT" ] && DOMAIN_CONTEXT=$(hermes chat -q "$domain_prompt" --yolo --quiet 2>/dev/null || echo "")
 
   echo "[RECON] Domain research complete. Designing architecture..." >&2
 
@@ -32,7 +37,7 @@ $GOAL" --yolo --quiet 2>/dev/null || echo "")
   attempt=1
   max_attempts=3
   while [ $attempt -le $max_attempts ]; do
-    hermes chat -q "Design a complete, buildable architecture for this project. Think like an architect who has studied this domain deeply.
+    local arch_prompt="Design a complete, buildable architecture for this project. Think like an architect who has studied this domain deeply.
 
 ## PROJECT REQUEST
 $GOAL
@@ -42,10 +47,11 @@ $DOMAIN_CONTEXT
 
 ## STEP 1: EXTRACT REAL CAPABILITIES FROM DOMAIN
 Based on the domain research, what must this tool actually DO? List concrete, specific actions tied to real workflows discovered in the research.
+If this is a data-driven app, START BY DESIGNING THE DATA MODELS (Pydantic, SQLAlchemy, or JSON Schema).
 BAD: 'storage system', 'validation', 'file management', 'save_data', 'process_request', 'get_items', 'update_record'
 GOOD: 'register_new_driver', 'track_daily_collections', 'generate_revenue_report', 'send_bulk_sms', 'verify_driver_license'
 
-## STEP 2: GROUP INTO FILES (MAXIMUM 5)
+## STEP 2: GROUP INTO FILES (MAXIMUM 20)
 Group related capabilities. Each file = one clear domain. Use as many files as the domain genuinely needs — don't force too few or too many.
 - NO generic resource files. No 'utils.py', 'config.py', 'helpers.py', 'common.py'
 - If a file would only have 1 tiny function, merge it into another file
@@ -101,8 +107,13 @@ Files with no imports first. Then files that depend on those. Max 3 phases.
 - If alignment fails, the build will break. Get it right the first time.
 
 Output ONLY valid JSON. No markdown fences. No explanation text.
-" --yolo --quiet > "$CONTRACTFILE" 2> "$LOGFILE"
-    local EXIT=$?
+"
+    local EXIT=0
+    if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+      python3 "${SKILLDIR}/modules/direct-api.py" "$arch_prompt" > "$CONTRACTFILE" 2> "$LOGFILE" || EXIT=$?
+    else
+      hermes chat -q "$arch_prompt" --yolo --quiet > "$CONTRACTFILE" 2> "$LOGFILE" || EXIT=$?
+    fi
     set -euo pipefail
 
     if [ $EXIT -ne 0 ] || [ ! -s "$CONTRACTFILE" ]; then
@@ -135,7 +146,7 @@ modules = data.get('modules', {})
 phases = data.get('phases', [])
 
 # Validate file count
-if len(modules) > 8:
+if len(modules) > 20:
     print(f"[RECON] WARNING: {len(modules)} files (many). Consider consolidating if possible.", file=sys.stderr)
 
 # Validate commands exist

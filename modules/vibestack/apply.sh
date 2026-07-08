@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CODES-DEVELOPER v12.4 — Codex Developer
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
 # VibeStack Plugin v3 — Assistant, not Gatekeeper
 # Hook: before-build
@@ -7,7 +7,7 @@
 # If not → step aside silently, let another plugin handle it
 set -euo pipefail
 
-SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && (pwd -P 2>/dev/null || pwd))"
 GOALFILE="${REPODIR}/.codex/goal.md"
 
 : # silent

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # ctx: codexhaven
-SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && (pwd -P 2>/dev/null || pwd))"
 detect() {
   local goal="$1"
   python3 -c "
 import json, sys, os
 goal=sys.argv[1].lower()
 try:
-    template_path = os.path.join(os.getenv('HOME'), '.hermes/skills/codex-developer/project-templates.json')
+    template_path = os.path.join(sys.argv[2], 'project-templates.json')
     if not os.path.exists(template_path):
         raise FileNotFoundError("Missing project-templates.json")
     with open(template_path, 'r') as f:

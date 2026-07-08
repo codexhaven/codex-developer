@@ -2,12 +2,12 @@
 set -euo pipefail
 # ctx: codexhaven
 # =============================================================================
-# CODES-DEVELOPER v12.4 — Hardened Build Engine
+# CODES-DEVELOPER v12.6 — Hardened Build Engine
 # Pre-build intelligence + root cause healer + method adaptation
 # Phase Gate + Brain Memory + Full Context Reader + Multi-pass Strengthen
 # =============================================================================
 
-SKILLDIR="${HOME}/.hermes/skills/codex-developer"
+SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && (pwd -P 2>/dev/null || pwd))"
 REPODIR="${CODEX_REPO:-${HOME}/projects}"
 GOALFILE="${REPODIR}/.codex/goal.md"
 STATEFILE="${REPODIR}/.codex/state.json"
@@ -29,15 +29,15 @@ release_lock() { flock -u 9 2>/dev/null; rm -f "$LOCKFILE" 2>/dev/null; }
 log() {
   local msg="$*" color="" icon=""
   case "$msg" in
-    *FAIL*|*ERROR*) color="\\033[1;31m"; icon="✗" ;;
-    *SUCCESS*|*BUILT*|*PASS*) color="\\033[1;32m"; icon="✓" ;;
-    *WARN*) color="\\033[1;33m"; icon="⚠" ;;
-    *CYCLE*|*PLANNING*) color="\\033[1;36m"; icon="▶" ;;
-    *DONE*) color="\\033[1;32m"; icon="★" ;;
-    *VERIFY*) color="\\033[0;36m"; icon="🔍" ;;
-    *) color="\\033[0;37m"; icon="·" ;;
+    *FAIL*|*ERROR*) color="\033[1;31m"; icon="✗" ;;
+    *SUCCESS*|*BUILT*|*PASS*) color="\033[1;32m"; icon="✓" ;;
+    *WARN*) color="\033[1;33m"; icon="⚠" ;;
+    *CYCLE*|*PLANNING*) color="\033[1;36m"; icon="▶" ;;
+    *DONE*) color="\033[1;32m"; icon="★" ;;
+    *VERIFY*) color="\033[0;36m"; icon="🔍" ;;
+    *) color="\033[0;37m"; icon="·" ;;
   esac
-  echo -e "${color}[${icon}] ${msg}\\[0m"
+  echo -e "${color}[${icon}] ${msg}\033[0m"
 }
 
 
@@ -45,6 +45,17 @@ log() {
 obs_log() {
   local msg="$1"
   echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $msg" >> "$OBSERVABILITY_LOG"
+}
+
+# --- Pre-flight Model Audit ---
+pre_flight_model_audit() {
+  log "AUDIT: Checking data models..."
+  local models_found=$(find "$REPODIR" -type f -name "*.py" -exec grep -lE "class.*BaseModel|class.*\(db.Model\)" {} + 2>/dev/null | wc -l)
+  if [ "$models_found" -gt 0 ]; then
+    log "AUDIT: $models_found model files detected. Building logic on firm foundation."
+  else
+    log "WARN: No data models found. If this is a data app, ensure models are built in Phase 1."
+  fi
 }
 # --- Modules ---
 
@@ -75,9 +86,9 @@ parse_entry() {
   [[ "$entry" =~ ^(NEW|PATCH):[[:space:]]*$ ]] && { echo "MODE=SKIP FILE= DESC="; return; }
   local clean_entry="${entry#NEW: }"
   clean_entry="${clean_entry#PATCH: }"
-  if [[ "$entry" =~ ^PATCH:[[:space:]]+([^[:space:]].*)[[:space:]]-[[:space:]](.*) ]]; then
+  if [[ "$entry" =~ ^PATCH:[[:space:]]*([^[:space:]].*)[[:space:]]-[[:space:]](.*) ]]; then
     echo "MODE=PATCH FILE=${BASH_REMATCH[1]} DESC=${BASH_REMATCH[2]}"
-  elif [[ "$entry" =~ ^NEW:[[:space:]]+(.+) ]]; then
+  elif [[ "$entry" =~ ^NEW:[[:space:]]*(.+) ]]; then
     echo "MODE=NEW FILE=${BASH_REMATCH[1]} DESC="
   else
     echo "MODE=NEW FILE=$entry DESC="
@@ -165,6 +176,18 @@ detect_project_domain() {
   if find "$REPODIR" -maxdepth 2 -name "*.csproj" -o -name "*.vbproj" -o -name "*.fsproj" | grep -q .; then
     domains+=("dotnet")
   fi
+  # Check for React/Next.js
+  if grep -q '"react"' "$REPODIR/package.json" 2>/dev/null; then
+    domains+=("react")
+  fi
+  # Check for Tailwind
+  if [ -f "$REPODIR/tailwind.config.js" ] || [ -f "$REPODIR/tailwind.config.ts" ]; then
+    domains+=("tailwind")
+  fi
+  # Check for FastAPI
+  if grep -qi "fastapi" "$REPODIR/requirements.txt" "$REPODIR/pyproject.toml" 2>/dev/null; then
+    domains+=("fastapi")
+  fi
   # Check for C/C++ (Makefile)
   if [ -f "$REPODIR/Makefile" ] || [ -f "$REPODIR/gnumakefile" ] || [ -f "$REPODIR/Makefile.am" ]; then
     domains+=("c")
@@ -233,14 +256,22 @@ build_file() {
 
     [ -f "$REPODIR/.codex/project_brain.md" ] && prompt="## MASTER BRAIN CONTEXT"$'\n'"$(cat "$REPODIR/.codex/project_brain.md")"$'\n\n'"$prompt"
 
-    local output
-    output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
+    local output=""
+    if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+      output=$(python3 "${SKILLDIR}/modules/direct-api.py" "$prompt" 2>/dev/null || echo "")
+    fi
+    [ -z "$output" ] && output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
 
     if [ -z "$output" ] || ! echo "$output" | grep -q "FILE:"; then
       log "WARN: Empty output — adapting strategy..."
       if [ -f "${SKILLDIR}/modules/method-adapter.sh" ]; then
         local adapted=$(bash "${SKILLDIR}/modules/method-adapter.sh" "$filepath" "$goal" "$mode" "$attempt" 2>/dev/null || echo "")
-        [ -n "$adapted" ] && output=$(hermes chat -q "$adapted" --yolo --quiet 2>/dev/null || echo "")
+        [ -n "$adapted" ] && {
+          if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+            output=$(python3 "${SKILLDIR}/modules/direct-api.py" "$adapted" 2>/dev/null || echo "")
+          fi
+          [ -z "$output" ] && output=$(hermes chat -q "$adapted" --yolo --quiet 2>/dev/null || echo "")
+        }
       fi
     fi
 
@@ -306,7 +337,9 @@ for mod_path in contract.get(\"modules\", {}).keys():
 
   mkdir -p "$(dirname "$fp")"
   printf '%s' "$content" > "$fp"
-  bash ~/.hermes/skills/codex-developer/add_path_header.sh "$fp"
+  if [ -f "${SKILLDIR}/add_path_header.sh" ]; then
+    bash "${SKILLDIR}/add_path_header.sh" "$fp"
+  fi
     # Inject Python path header for import resolution
     if [[ "$fp" == *.py ]]; then
       if ! grep -q "sys.path.insert" "$fp" 2>/dev/null; then
@@ -389,8 +422,11 @@ generate_queue() {
   log "PLANNING: Generating build order..."
   local subdirs=$(find "$REPODIR" -maxdepth 2 -type d -not -path "*/.*" | grep -v "$REPODIR" | sed "s|$REPODIR/||")
   local prompt="## GOAL"$'\n'"$goal"$'\n\n'"## EXISTING DIRECTORIES"$'\n'"$(echo "$subdirs" | sed 's/^/- /')"$'\n\n'"## INSTRUCTIONS: List files in dependency order. Output ONLY file paths. No markdown."
-  local output
-  output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
+  local output=""
+  if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+    output=$(python3 "${SKILLDIR}/modules/direct-api.py" "$prompt" 2>/dev/null || echo "")
+  fi
+  [ -z "$output" ] && output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
   [ -z "$output" ] && { log "FAIL: No plan."; return 1; }
   echo "$output" | grep -E '\.(py|js|ts|tsx|jsx|html|css|md|txt|json|yml|yaml|sh|toml|example|gitignore)' > "$QUEUEFILE" || true
   local count=$(wc -l < "$QUEUEFILE" 2>/dev/null || echo 0)
@@ -451,18 +487,24 @@ main() {
 
   # Apply stack modules if they exist
   [ -f "${SKILLDIR}/modules/vibestack/apply.sh" ] && bash "${SKILLDIR}/modules/vibestack/apply.sh" 2>/dev/null || true
+  [ -f "${SKILLDIR}/modules/reactstack/apply.sh" ] && bash "${SKILLDIR}/modules/reactstack/apply.sh" 2>/dev/null || true
   [ -f "${SKILLDIR}/modules/flaskstack/apply.sh" ] && bash "${SKILLDIR}/modules/flaskstack/apply.sh" 2>/dev/null || true
   [ -f "${SKILLDIR}/modules/vanillastack/apply.sh" ] && bash "${SKILLDIR}/modules/vanillastack/apply.sh" 2>/dev/null || true
   [ -f "${SKILLDIR}/modules/gitignore-init.sh" ] && bash "${SKILLDIR}/modules/gitignore-init.sh" 2>/dev/null || true
 
-  obs_log "Starting build loop with max_cycles=$max_cycles"
   local max_cycles=50  # Higher ceiling, but will exit early when queue is empty
+  obs_log "Starting build loop with max_cycles=$max_cycles"
   while [ $max_cycles -gt 0 ]; do
     max_cycles=$((max_cycles - 1))
 
     # Validate dependency order before building
     if type validate_dependency_order >/dev/null 2>&1; then
       validate_dependency_order
+    fi
+
+    # Pre-flight audit for models every 10 cycles
+    if [ $((max_cycles % 10)) -eq 0 ]; then
+      pre_flight_model_audit
     fi
 
     if [ ! -s "$QUEUEFILE" ]; then
@@ -498,8 +540,8 @@ main() {
     fi
 
     local parsed=$(parse_entry "$entry")
-    local mode=$(echo "$parsed" | sed "s/MODE=//;s/ .*//")
-    local current=$(echo "$parsed" | sed "s/.*FILE=//;s/ .*//")
+    local mode=$(echo "$parsed" | sed -E 's/MODE=([^ ]+) .*/\1/')
+    local current=$(echo "$parsed" | sed -E 's/.*FILE=([^ ]+) .*/\1/')
     current="${current#NEW: }"; current="${current#NEW:}"
     current="${current#PATCH: }"; current="${current#PATCH:}"
     current="${current#/}"
@@ -527,7 +569,10 @@ main() {
     log "CYCLE $cycle | $mode: $current"
 
     local built=$(get_built_context "$mode" "$current")
-    local context_map=$(get_project_context)
+    local context_map=""
+    if [ -f "${SKILLDIR}/modules/map_project.py" ]; then
+      context_map=$(python3 "${SKILLDIR}/modules/map_project.py" "$REPODIR" 2>/dev/null || echo "")
+    fi
     local failure_warnings=$(check_preemptive_failure "$goal")
     local project_domains=$(detect_project_domain)
     local rules=()
@@ -546,29 +591,27 @@ main() {
       local domains_json
       domains_json=$(echo "$rule_data" | python3 -c "import json,sys; print(json.dumps(json.loads(sys.stdin.read()).get('domains', [])))" 2>/dev/null)
       # Check if the rule applies to the project's domains
-      local match
-      match=$(echo "$domains_json" "$project_domains" | python3 -c "
+      if ! echo "$domains_json|$project_domains" | python3 -c "
 import sys, json
-data = sys.stdin.read().strip().split(' ', 1)
-if len(data) < 2:
-  sys.exit(0)
-domains_list = json.loads(data[0])
-proj_domains = data[1].split()
-if not domains_list:  # empty list means all domains
-  sys.exit(1)
+raw = sys.stdin.read().strip()
+if '|' not in raw: sys.exit(0)
+dj, pd = raw.split('|', 1)
+domains_list = json.loads(dj)
+proj_domains = pd.split()
+if not domains_list: sys.exit(1)
 for d in proj_domains:
-  if d in domains_list:
-    sys.exit(1)
+  if d in domains_list: sys.exit(1)
 sys.exit(0)
-      ")
-      if [ $? -eq 0 ]; then
+      " 2>/dev/null; then
         # Domains match (or rule has no domain restriction)
         rules+=("$priority|$rule_text")
       fi
     done < <(grep -h '"type": "rule"' "$GLOBAL_KNOWLEDGE" 2>/dev/null)
     # Sort by priority (descending) and then by rule text (for deterministic order)
-    local sorted_rules
-    sorted_rules=$(printf '%s\n' "${rules[@]}" | sort -t '|' -k1,1nr -k2,2 | cut -d'|' -f2-)
+    local sorted_rules=""
+    if [ ${#rules[@]} -gt 0 ]; then
+      sorted_rules=$(printf '%s\n' "${rules[@]}" | sort -t '|' -k1,1nr -k2,2 | cut -d'|' -f2-)
+    fi
     local global_wisdom
     if [ -z "$sorted_rules" ]; then
       global_wisdom=""
@@ -585,8 +628,11 @@ sys.exit(0)
 
     [ -f "$REPODIR/.codex/project_brain.md" ] && prompt="## MASTER BRAIN CONTEXT"$'\n'"$(cat "$REPODIR/.codex/project_brain.md")"$'\n\n'"$prompt"
 
-    local output
-    output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
+    local output=""
+    if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+      output=$(python3 "${SKILLDIR}/modules/direct-api.py" "$prompt" 2>/dev/null || echo "")
+    fi
+    [ -z "$output" ] && output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
 
     # Try patch fallback for large files
     if [ -z "$output" ] && [ "$mode" = "PATCH" ] && [ -f "$REPODIR/$current" ]; then
@@ -611,7 +657,6 @@ sys.exit(0)
         obs_log "Engaging healer due to repeated failures (about to run)"
         log "[ERROR] Threshold reached. Engaging HEALER."
         bash "${SKILLDIR}/modules/healer.sh"
-        obs_log "Engaging healer due to repeated failures after build failure"
         FAILURE_COUNT=0
       fi
       continue
@@ -666,12 +711,21 @@ if '$applied' in data.get('modules', {}):
       log "Syntax failure in $applied. Initiating Adversarial Healing..."
       local err_log=$(cat "${REPODIR}/.codex/last_error.log" 2>/dev/null || echo "Unknown syntax error")
       local fix_prompt="## MODE: FIX SYNTAX ERROR"$'\n'"## TARGET FILE: $applied"$'\n'"## ERROR: $err_log"$'\n'"## INSTRUCTIONS: Fix the syntax error. Do not change logic. If the error is a ModuleNotFoundError about a stdlib module, the filename is shadowing Python'\'s standard library — rename the file to avoid the collision (e.g. collections.py -> collections_handler.py)."
-      output=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
+      output=""
+      if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+        output=$(python3 "${SKILLDIR}/modules/direct-api.py" "$fix_prompt" 2>/dev/null || echo "")
+      fi
+      [ -z "$output" ] && output=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
+
       if ! echo "$output" | grep -q "FILE:"; then
         log "Level 1 fix failed. Pivoting to Structural Healing..."
         local map=$(python3 "${SKILLDIR}/modules/map_project.py" 2>/dev/null || echo "")
         fix_prompt="## MODE: STRUCTURAL HEALING"$'\n'"## TARGET FILE: $applied"$'\n'"## PROJECT MAP: $map"$'\n'"## ERROR: $err_log"$'\n'"## INSTRUCTIONS: Re-align imports with the Project Map above."
-        output=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
+        output=""
+        if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+          output=$(python3 "${SKILLDIR}/modules/direct-api.py" "$fix_prompt" 2>/dev/null || echo "")
+        fi
+        [ -z "$output" ] && output=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
       fi
       if echo "$output" | grep -q "FILE:"; then
         apply_file "$output"
@@ -773,7 +827,7 @@ if target in contract.get('modules', {}):
     run_plugins "after-verify"
 
     if [ -f "${SKILLDIR}/modules/failure-check.sh" ]; then
-      bash "${SKILLDIR}/modules/failure-check.sh" check "$REPODIR/$applied" 2>/dev/null || true
+      PATTERNSFILE="${SKILLDIR}/failure-patterns.json" bash "${SKILLDIR}/modules/failure-check.sh" check "$REPODIR/$applied" 2>/dev/null || true
     fi
 
     local lines=$(wc -l < "$REPODIR/$applied" 2>/dev/null || echo 0)

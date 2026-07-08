@@ -1,5 +1,5 @@
-#!/bin/bash
-# CODES-DEVELOPER v12.4 — Codex Developer
+#!/usr/bin/env bash
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
 # architect.sh v5 — Pass-through validator
 # Recon already produced the contract. Architect just validates and serves.

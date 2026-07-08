@@ -2,7 +2,7 @@
 #!/usr/bin/env bash
 # SED PATCHER v2 — accepts any sed-like command from Hermes
 set -euo pipefail
-# CODES-DEVELOPER v12.4 — Codex Developer
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
 REPODIR="$(realpath "${CODEX_REPO:-$HOME/projects}")"
 
@@ -29,8 +29,11 @@ Output strictly ONLY valid sed commands, one per line. Do NOT use shell features
 Valid patterns: s/pattern/replacement/g , /pattern/s/old/new/g , NUMBER c\text
 NO shell backticks or execution operators."
 
-  local sed_output
-  sed_output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
+  local sed_output=""
+  if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+    sed_output=$(python3 "${SKILLDIR}/modules/direct-api.py" "$prompt" 2>/dev/null || echo "")
+  fi
+  [ -z "$sed_output" ] && sed_output=$(hermes chat -q "$prompt" --yolo --quiet 2>/dev/null || echo "")
   
   # Validate output to only contain allowed sed structure
   # Allows: s/a/b/g, /a/s/b/c/g, #c\text

@@ -7,9 +7,9 @@ from collections import Counter
 from datetime import datetime, UTC
 # ctx: codexhaven
 
-HOME = os.path.expanduser('~')
-GLOBAL_FILE = os.path.join(HOME, '.hermes', 'skills', 'codex-developer', 'global-knowledge.jsonl')
-PROPOSALS_FILE = os.path.join(HOME, '.hermes', 'skills', 'codex-developer', 'proposals.md')
+SKILLDIR = os.path.dirname(os.path.abspath(__file__))
+GLOBAL_FILE = os.path.join(SKILLDIR, 'global-knowledge.jsonl')
+PROPOSALS_FILE = os.path.join(SKILLDIR, 'proposals.md')
 
 def scan_all_projects():
     """Scan all projects for patterns that could be hardened."""

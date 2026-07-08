@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CODES-DEVELOPER v12.4 — Codex Developer
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
 # method-adapter.sh — Adaptive prompt strategy when hermes returns empty
 # Called by build_file() when primary prompt fails

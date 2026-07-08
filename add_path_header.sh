@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CODES-DEVELOPER v12.4 — Codex Developer
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
 # add_path_header.sh - Add standard headers to generated files
 # Usage: add_path_header.sh <filepath>
