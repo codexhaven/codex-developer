@@ -3,7 +3,6 @@
 import os
 import json
 import sys
-import time
 import urllib.request
 import urllib.error
 

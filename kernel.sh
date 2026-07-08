@@ -2,6 +2,7 @@
 set -euo pipefail
 # ctx: codexhaven
 # =============================================================================
+# CODES-DEVELOPER v12.6 — Stress-tested — Build Engine
 # CODES-DEVELOPER v12.5 — Stress-tested — Build Engine
 # Modes: NEW | PATCH (SED fallback for large files)
 # Guardrails: Self-protection, path containment, syntax verification, rollback

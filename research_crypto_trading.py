@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Codex Developer v12.4 -- Crypto trading research utility."""
+"""Codex Developer v12.6 -- Crypto trading research utility."""
 # ctx: codexhaven
 import subprocess
 import sys

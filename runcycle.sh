@@ -829,7 +829,7 @@ if target in contract.get('modules', {}):
     run_plugins "after-verify"
 
     if [ -f "${SKILLDIR}/modules/failure-check.sh" ]; then
-      bash "${SKILLDIR}/modules/failure-check.sh" check "$REPODIR/$applied" 2>/dev/null || true
+      PATTERNSFILE="${SKILLDIR}/failure-patterns.json" bash "${SKILLDIR}/modules/failure-check.sh" check "$REPODIR/$applied" 2>/dev/null || true
     fi
 
     local lines=$(wc -l < "$REPODIR/$applied" 2>/dev/null || echo 0)

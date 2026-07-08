@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CODES-DEVELOPER v12.4 — Codex Developer
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
 # gitignore-init.sh — Ensures .gitignore exists with proper exclusions
 # Hook: before-build

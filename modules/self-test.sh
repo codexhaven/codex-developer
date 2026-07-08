@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# CODES-DEVELOPER v12.4 — Codex Developer
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
-# v12.4 Self-Test Pipeline (Silent/Reporting mode)
+# v12.6 Self-Test Pipeline (Silent/Reporting mode)
 REPODIR="$(readlink -f "${1:-$HOME/projects}")"
 TEST_LOG="${REPODIR}/.codex/test_summary.log"
 

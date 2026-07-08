@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# v12.4 Symbol Validator — Hardened
+# v12.6 Symbol Validator — Hardened
 # Cross-file validation: imports, exports, dead code, missing references
 set -euo pipefail
-# CODES-DEVELOPER v12.4 — Codex Developer
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
 
 REPODIR="$(readlink -f "${1:-${REPODIR:-.}}")"

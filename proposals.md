@@ -6,7 +6,7 @@
 - **Reason:** 2 Next.js projects missing tsconfig.json
 - **Proposed Rule:** For Next.js projects, always create tsconfig.json with @/* path alias to ./*
 - **Risk:** low
-- **Auto-fix:** `python3 -c "import json,datetime; entry={'type':'rule','rule':'TSCONFIG AUTO-GENERATION: For Next.js projects, always create tsconfig.json with paths: {@/*: [./*]}.','source':'opportunity-analyzer','timestamp':datetime.datetime.now(datetime.UTC).isoformat()}; f=open('$HOME/.hermes/skills/codex-developer/global-knowledge.jsonl','a'); f.write(json.dumps(entry)+'\n')"`
+- **Auto-fix:** `python3 -c "import json,datetime; entry={'type':'rule','rule':'TSCONFIG AUTO-GENERATION: For Next.js projects, always create tsconfig.json with paths: {@/*: [./*]}.','source':'opportunity-analyzer','timestamp':datetime.datetime.now(datetime.UTC).isoformat()}; f=open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "global-knowledge.jsonl"), "a"); f.write(json.dumps(entry)+'\n')"`
 - **Found in:** fluxus-lang
 - **Found in:** street-food-app
 - **Status:** APPROVED

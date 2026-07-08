@@ -2,7 +2,7 @@
 # HEALER MODULE v2 — Orchestrator for split healer modules
 # Traces the exact failure chain, fixes the source, re-verifies
 set -euo pipefail
-# CODES-DEVELOPER v12.4 — Codex Developer
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
 
 SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && (pwd -P 2>/dev/null || pwd))"

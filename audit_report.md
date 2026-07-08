@@ -1,4 +1,4 @@
-# Codex Developer v12.4 — Complete Inventory Report
+# Codex Developer v12.6 — Complete Inventory Report
 
 **Repository:** https://github.com/codexhaven/codex-developer.git
 **Generated:** 2026-07-02
@@ -129,7 +129,7 @@
 
 | # | Path | Language | Purpose | Dependencies |
 |---|------|----------|---------|--------------|
-| 70 | `listen.sh.bak.v12.4_pre_awareness` | Bash | Pre-v12.4 backup | None |
+| 70 | `listen.sh.bak.v12.6_pre_awareness` | Bash | Pre-v12.6 backup | None |
 | 71 | `listen.sh.listen_auto_backup` | Bash | Auto-backup | None |
 | 72 | `runcycle.sh.obs_backup` | Bash | Observability backup | None |
 | 73 | `runcycle.sh.obs2_backup` | Bash | Observability backup v2 | None |
@@ -342,7 +342,7 @@ template-detect.sh
 
 | # | File | Severity | Notes |
 |---|------|----------|-------|
-| 1 | `listen.sh` | [WARNING] | Has version header (`# CODES-DEVELOPER v12.4`) but no DNA fingerprint |
+| 1 | `listen.sh` | [WARNING] | Has version header (`# CODES-DEVELOPER v12.6`) but no DNA fingerprint |
 | 2 | `runcycle.sh` | [WARNING] | Has version header but no DNA fingerprint |
 | 3 | `kernel.sh` | [WARNING] | Has version header but no DNA fingerprint |
 | 4 | `install.sh` | [WARNING] | Has version header but no DNA fingerprint |

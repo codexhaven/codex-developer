@@ -32,8 +32,7 @@ if [ -n "$ROOT_FILE" ] && [ "$ROOT_FILE" != "unknown" ] && [ -f "${REPODIR}/${RO
   log_msg "Reading $ROOT_FILE for targeted fix..."
   FILE_CONTENT=$(cat "${REPODIR}/${ROOT_FILE}")
   
-  FIX_OUTPUT=$(hermes chat -q \
-    "## MODE: SURGICAL FIX
+  local fix_prompt="## MODE: SURGICAL FIX
 ## ROOT CAUSE: $ROOT_ISSUE
 ## FIX: $FIX_ACTION
 ## CURRENT FILE: $ROOT_FILE
@@ -44,8 +43,13 @@ $FILE_CONTENT
 
 ## INSTRUCTIONS
 Apply ONLY the fix described above. Do NOT rewrite the file. Keep everything else identical.
-Output format: FILE: $ROOT_FILE followed by the complete fixed file contents." \
-    --yolo --quiet 2>/dev/null || echo "")
+Output format: FILE: $ROOT_FILE followed by the complete fixed file contents."
+
+  FIX_OUTPUT=""
+  if [ -f "${SKILLDIR}/modules/direct-api.py" ] && [ -n "${OPENROUTER_KEY:-}" ]; then
+    FIX_OUTPUT=$(python3 "${SKILLDIR}/modules/direct-api.py" "$fix_prompt" 2>/dev/null || echo "")
+  fi
+  [ -z "$FIX_OUTPUT" ] && FIX_OUTPUT=$(hermes chat -q "$fix_prompt" --yolo --quiet 2>/dev/null || echo "")
 
   if [ -n "$FIX_OUTPUT" ] && echo "$FIX_OUTPUT" | grep -q "FILE:"; then
     # Extract and apply

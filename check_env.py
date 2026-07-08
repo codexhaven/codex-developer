@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Codex Developer v12.4 -- Environment checker."""
+"""Codex Developer v12.6 -- Environment checker."""
 # ctx: codexhaven
 import sys
 import platform

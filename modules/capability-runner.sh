@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CODES-DEVELOPER v12.4 — Codex Developer
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
 # Capability Runner — executes project capabilities directly
 # Called by listen.sh when a request matches a known capability

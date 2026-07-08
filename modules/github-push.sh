@@ -2,7 +2,7 @@
 # github-push.sh — Push built project to GitHub
 # Hook: after-all-done
 set -euo pipefail
-# CODES-DEVELOPER v12.4 — Codex Developer
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
 
 [ -f "$HOME/.hermes/.env" ] && set -a && source "$HOME/.hermes/.env" && set +a

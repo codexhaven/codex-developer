@@ -161,7 +161,7 @@ rm -f /tmp/codex-developer.lock ~/tmp-codex-developer.lock
 - Improvements: Expanded project domain detection and enhanced healer's root cause analysis.
 - Documentation: Updated SKILL.md and added a verification test suite for the core calculator.
 
-### v12.4 (2026-07-02)
+### v12.6 (2026-07-02)
 - Fixed all CRITICAL bugs (typo in GLOBAL_KNOWLEDGE, double increment, unclosed loop, syntax error)
 - Added DNA fingerprints to all 45+ files that were missing them
 - Removed duplicate code and artifact files

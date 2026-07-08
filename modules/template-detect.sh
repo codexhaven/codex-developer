@@ -8,7 +8,7 @@ detect() {
 import json, sys, os
 goal=sys.argv[1].lower()
 try:
-    template_path = os.path.join(os.getenv('HOME'), '.hermes/skills/codex-developer/project-templates.json')
+    template_path = os.path.join(sys.argv[2], 'project-templates.json')
     if not os.path.exists(template_path):
         raise FileNotFoundError("Missing project-templates.json")
     with open(template_path, 'r') as f:

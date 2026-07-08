@@ -2,7 +2,7 @@
 # review-to-queue.sh — Bridge between REVIEW mode and BUILD loop
 # Searches project for files matching review entries
 set -euo pipefail
-# CODES-DEVELOPER v12.4 — Codex Developer
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
 
 REVIEW_DIR="${1:-${REPODIR:-.}/reviews}"

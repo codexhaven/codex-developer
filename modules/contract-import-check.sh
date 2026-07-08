@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CODES-DEVELOPER v12.4 — Codex Developer
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
 # Contract Import Check — validates imports against contract
 # Only flags PROJECT imports, not stdlib or known third-party packages

@@ -2,7 +2,7 @@
 #!/usr/bin/env bash
 # SED PATCHER v2 — accepts any sed-like command from Hermes
 set -euo pipefail
-# CODES-DEVELOPER v12.4 — Codex Developer
+# CODES-DEVELOPER v12.6 — Codex Developer
 # ctx: codexhaven
 REPODIR="$(realpath "${CODEX_REPO:-$HOME/projects}")"
 
