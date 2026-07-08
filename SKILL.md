@@ -4,7 +4,7 @@ description: >
   Autonomous software factory (v12.6). Domain-aware recon research, phase-gated builds,
   DNA fingerprinting, 4-step self-healing, cross-reference validation, contract enforcement,
   76 global rules, auto GitHub push, stack plugin system.
-version: 12.6.0
+version: 12.5.0
 metadata:
   required_toolsets: [terminal, file, web]
   platforms: [linux, macos, android-termux]

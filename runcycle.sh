@@ -591,16 +591,18 @@ main() {
       local domains_json
       domains_json=$(echo "$rule_data" | python3 -c "import json,sys; print(json.dumps(json.loads(sys.stdin.read()).get('domains', [])))" 2>/dev/null)
       # Check if the rule applies to the project's domains
-      if ! echo "$domains_json|$project_domains" | python3 -c "
+      if ! echo "$domains_json" "$project_domains" | python3 -c "
 import sys, json
-raw = sys.stdin.read().strip()
-if '|' not in raw: sys.exit(0)
-dj, pd = raw.split('|', 1)
-domains_list = json.loads(dj)
-proj_domains = pd.split()
-if not domains_list: sys.exit(1)
+data = sys.stdin.read().strip().split(' ', 1)
+if len(data) < 2:
+  sys.exit(0)
+domains_list = json.loads(data[0])
+proj_domains = data[1].split()
+if not domains_list:  # empty list means all domains
+  sys.exit(1)
 for d in proj_domains:
-  if d in domains_list: sys.exit(1)
+  if d in domains_list:
+    sys.exit(1)
 sys.exit(0)
       " 2>/dev/null; then
         # Domains match (or rule has no domain restriction)
